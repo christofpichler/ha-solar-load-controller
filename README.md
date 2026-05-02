@@ -3,7 +3,7 @@
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
 [![Tests](https://github.com/christofpichler/ha-solar-load-controller/actions/workflows/tests.yml/badge.svg)](https://github.com/christofpichler/ha-solar-load-controller/actions/workflows/tests.yml)
 
-![Solar Load Controller icon](assets/icon.svg)
+<img src="assets/icon.svg" alt="Solar Load Controller icon" width="96">
 
 Solar Load Controller is a Home Assistant custom integration for running a
 switchable load when solar energy is actually useful. It combines live grid
