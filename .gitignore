@@ -1,0 +1,34 @@
+# macOS
+.DS_Store
+._*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+env/
+dist/
+build/
+*.egg-info/
+
+# Home Assistant local development files
+.storage/
+.cloud/
+deps/
+tts/
+www/
+home-assistant.log*
+home-assistant_v2.db*
+OZW_Log.txt
+known_devices.yaml
+secrets.yaml
+
+# Solar Load Controller runtime debug output
+solar_load_controller_decisions.jsonl

@@ -1,0 +1,14 @@
+{
+  "domain": "solar_load_controller",
+  "name": "Solar Load Controller",
+  "after_dependencies": [],
+  "codeowners": ["@christofpichler"],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/christofpichler/ha-solar-load-controller",
+  "integration_type": "hub",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/christofpichler/ha-solar-load-controller/issues",
+  "requirements": [],
+  "version": "1.0.0"
+}

@@ -1,0 +1,85 @@
+name: Feature request
+description: Suggest a new behavior, supported setup, entity, or configuration option.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for new control logic, additional sensors, improved forecast handling, or support for another load type.
+
+  - type: textarea
+    id: use_case
+    attributes:
+      label: Use case
+      description: What should Solar Load Controller help you do?
+      placeholder: I want to run a boiler only when my balcony solar system would otherwise export power...
+    validations:
+      required: true
+
+  - type: textarea
+    id: current_limitation
+    attributes:
+      label: Current limitation
+      description: What is currently missing or not working well enough?
+      placeholder: The current high forecast mode does not consider...
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed_behavior
+    attributes:
+      label: Proposed behavior
+      description: Describe the behavior you would expect.
+      placeholder: The controller should...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: feature_area
+    attributes:
+      label: Feature area
+      options:
+        - Decision logic
+        - Forecast handling
+        - Battery handling
+        - Configuration flow
+        - Entities/statistics
+        - Debugging/logging
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: setup
+    attributes:
+      label: Solar/load setup
+      description: This helps judge whether the feature is generic or specific to one installation.
+      placeholder: |
+        PV size:
+        Inverter limit:
+        Battery:
+        Controlled load:
+        Load power:
+        Forecast integration:
+    validations:
+      required: false
+
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: Compatibility considerations
+      description: Would this change affect existing users or require migration?
+      placeholder: This should be optional because...
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Add screenshots, graphs, examples, or links if useful.
+    validations:
+      required: false

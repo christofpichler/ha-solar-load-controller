@@ -1,0 +1,70 @@
+"""Constants for the Solar Load Controller integration."""
+
+from __future__ import annotations
+
+DOMAIN = "solar_load_controller"
+
+DATA_AUTOMATION_PAUSED = "automation_paused"
+DATA_CONTROLLER = "controller"
+
+FORECAST_DAY_MODE_AUTO = "auto"
+FORECAST_DAY_MODE_HIGH = "high"
+FORECAST_DAY_MODE_LOW = "low"
+
+DECISION_AUTOMATION_PAUSED = "paused"
+DECISION_BATTERY_PROTECTED = "battery"
+DECISION_CURTAILMENT_PREVENTION = "curtailment"
+DECISION_FORECAST_ASSISTED_RUN = "forecast_run"
+DECISION_FORECAST_WAIT = "forecast"
+DECISION_GRID_IMPORT_LIMIT_EXCEEDED = "grid_import"
+DECISION_MINIMUM_OFF_TIME_ACTIVE = "min_off"
+DECISION_MINIMUM_ON_TIME_ACTIVE = "min_on"
+DECISION_MINIMUM_RUNTIME_REACHED = "runtime_met"
+DECISION_MINIMUM_RUNTIME_REQUIRED = "runtime_force"
+DECISION_MISSING_REQUIRED_SENSOR = "missing_sensor"
+DECISION_SOLAR_SURPLUS_AVAILABLE = "solar"
+DECISION_TIME_WINDOW_BLOCKED = "time_window"
+DECISION_WAITING_FOR_SURPLUS = "waiting"
+
+CONF_BATTERY_CAPACITY_KWH = "battery_capacity_kwh"
+CONF_BATTERY_MODE = "battery_mode"
+CONF_BATTERY_POWER_DIRECTION = "battery_power_direction"
+CONF_BATTERY_POWER_SENSOR = "battery_power_sensor"
+CONF_BATTERY_SOC_SENSOR = "battery_soc_sensor"
+CONF_DEBUG_SENSOR_ENABLED = "debug_sensor_enabled"
+CONF_FORECAST_HIGH_THRESHOLD_KWH_PER_KWP = "forecast_high_threshold_kwh_per_kwp"
+CONF_FORECAST_NEXT_HOUR_SENSOR = "forecast_next_hour_sensor"
+CONF_FORECAST_REMAINING_TODAY_SENSOR = "forecast_remaining_today_sensor"
+CONF_FORECAST_TODAY_SENSOR = "forecast_today_sensor"
+CONF_GRID_EXPORT_SENSOR = "grid_export_sensor"
+CONF_GRID_IMPORT_LIMIT_W = "grid_import_limit_w"
+CONF_GRID_IMPORT_SENSOR = "grid_import_sensor"
+CONF_EARLIEST_START_TIME = "earliest_start_time"
+CONF_INVERTER_LIMIT_W = "inverter_limit_w"
+CONF_LATEST_FINISH_TIME = "latest_finish_time"
+CONF_MIN_BATTERY_SOC = "min_battery_soc"
+CONF_MIN_DAILY_RUNTIME_MINUTES = "min_daily_runtime_minutes"
+CONF_MIN_RUNTIME_GRID_OVERRIDE = "min_runtime_grid_override"
+CONF_MIN_OFF_MINUTES = "min_off_minutes"
+CONF_MIN_ON_MINUTES = "min_on_minutes"
+CONF_LOAD_POWER_W = "load_power_w"
+CONF_LOAD_SWITCH = "load_switch"
+CONF_PV_CURRENT_POWER_SENSOR = "pv_current_power_sensor"
+CONF_PV_SIZE_KWP = "pv_size_kwp"
+
+BATTERY_MODE_PRESERVE = "preserve"
+BATTERY_MODE_USE = "use"
+BATTERY_POWER_CHARGING_POSITIVE = "charging_positive"
+BATTERY_POWER_DISCHARGING_POSITIVE = "discharging_positive"
+
+DEFAULT_GRID_IMPORT_LIMIT_W = 600
+DEFAULT_BATTERY_POWER_DIRECTION = BATTERY_POWER_CHARGING_POSITIVE
+DEFAULT_EARLIEST_START_TIME = "06:00"
+DEFAULT_LATEST_FINISH_TIME = "21:00"
+DEFAULT_FORECAST_WAIT_MINUTES = 60
+DEFAULT_FORECAST_HIGH_THRESHOLD_KWH_PER_KWP = 5.0
+DEFAULT_MIN_BATTERY_SOC = 70
+DEFAULT_MIN_DAILY_RUNTIME_MINUTES = 180
+DEFAULT_MIN_OFF_MINUTES = 15
+DEFAULT_MIN_ON_MINUTES = 20
+DEFAULT_LOAD_POWER_W = 450

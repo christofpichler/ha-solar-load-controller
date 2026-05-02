@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://github.com/christofpichler/ha-solar-load-controller#readme
+    about: Read the setup notes, entity overview, and debug log instructions.

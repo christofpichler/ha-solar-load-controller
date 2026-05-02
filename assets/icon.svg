@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Solar Load Controller</title>
+  <desc id="desc">Solar panel, sun, and controlled electrical load</desc>
+  <rect width="256" height="256" rx="48" fill="#0f172a"/>
+  <circle cx="182" cy="66" r="24" fill="#facc15"/>
+  <g stroke="#facc15" stroke-linecap="round" stroke-width="8">
+    <path d="M182 24v12"/>
+    <path d="M182 96v12"/>
+    <path d="M140 66h12"/>
+    <path d="M212 66h12"/>
+    <path d="m152 36 8 8"/>
+    <path d="m204 88 8 8"/>
+    <path d="m212 36-8 8"/>
+    <path d="m160 88-8 8"/>
+  </g>
+  <path d="M38 103h118l-18 74H20z" fill="#1e293b" stroke="#38bdf8" stroke-linejoin="round" stroke-width="8"/>
+  <g stroke="#38bdf8" stroke-linecap="round" stroke-width="5">
+    <path d="M58 108 44 173"/>
+    <path d="M92 108 84 173"/>
+    <path d="M126 108 124 173"/>
+    <path d="M31 132h119"/>
+    <path d="M25 154h120"/>
+  </g>
+  <path d="M130 88 103 139h31l-24 51 63-70h-34z" fill="#f8fafc" stroke="#0f172a" stroke-linejoin="round" stroke-width="5"/>
+  <rect x="166" y="142" width="56" height="56" rx="14" fill="#14b8a6"/>
+  <path d="M178 170h32" stroke="#f8fafc" stroke-linecap="round" stroke-width="8"/>
+  <circle cx="194" cy="170" r="9" fill="#f8fafc"/>
+</svg>
