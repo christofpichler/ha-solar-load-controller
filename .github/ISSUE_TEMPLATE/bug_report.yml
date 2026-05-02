@@ -1,8 +1,7 @@
 name: Bug report
 description: Report unexpected switching behavior, setup problems, or runtime issues.
 title: "[Bug]: "
-labels:
-  - bug
+labels: ["bug"]
 body:
   - type: markdown
     attributes:
@@ -62,7 +61,7 @@ body:
       options:
         - Solcast by BJReplay
         - Other
-        - None
+        - "None"
     validations:
       required: true
 
@@ -109,7 +108,6 @@ body:
     attributes:
       label: Decision debug log
       description: Paste the relevant JSONL lines around the problem time.
-      render: json
     validations:
       required: false
 
@@ -118,7 +116,6 @@ body:
     attributes:
       label: Home Assistant logs
       description: Paste warnings/errors from Home Assistant logs if there are any.
-      render: text
     validations:
       required: false
 
