@@ -216,26 +216,3 @@ python3 -m py_compile custom_components/solar_load_controller/*.py
 python3 -m json.tool custom_components/solar_load_controller/translations/de.json
 python3 -m json.tool custom_components/solar_load_controller/translations/en.json
 ```
-
-## Releases
-
-Current release candidate: `1.0.0`.
-
-Release notes are published with GitHub releases.
-
-## Brand Assets
-
-- Repository icon: `assets/icon.svg`
-- Integration icon copy: `custom_components/solar_load_controller/icon.svg`
-
-The icon is intentionally generic: solar generation, energy flow, and a
-controlled load. It is not pool-specific.
-
-## Roadmap
-
-- Add a future `mid` forecast mode.
-- Add a controlled late-morning forecast recheck.
-- Make spike filtering duration configurable.
-- Add Home Assistant component tests for config flow, entities, and service
-  calls.
-- Add adaptive logic based on previous days and forecast accuracy.
