@@ -67,6 +67,7 @@ from .const import (
     FORECAST_DAY_MODE_LOW,
 )
 from .decision_engine import DecisionInputs, DecisionResult, evaluate_decision
+from .high_mode import allow_post_runtime_curtailment_restart
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -77,6 +78,8 @@ HIGH_FORECAST_CURTAILMENT_HEADROOM_RATIO = 0.8
 HIGH_FORECAST_NO_GRID_TOLERANCE_W = 25
 HIGH_FORECAST_POST_RUNTIME_BATTERY_TARGET_SOC = 99
 HIGH_FORECAST_POST_RUNTIME_BATTERY_HEADROOM_KWH = 0.05
+HIGH_FORECAST_POST_RUNTIME_RESTART_SURPLUS_MARGIN_W = 75
+HIGH_FORECAST_POST_RUNTIME_NEXT_HOUR_RATIO = 1.5
 LOW_FORECAST_RUNTIME_DEADLINE_RATIO = 0.5
 PENDING_LOAD_STATE_TIMEOUT = timedelta(seconds=30)
 DEBUG_DECISION_LOG_FILENAME = "solar_load_controller_decisions.jsonl"
@@ -920,6 +923,12 @@ class SolarLoadController:
                 "high_forecast_post_runtime_battery_target_soc": (
                     HIGH_FORECAST_POST_RUNTIME_BATTERY_TARGET_SOC
                 ),
+                "high_forecast_post_runtime_restart_surplus_margin_w": (
+                    HIGH_FORECAST_POST_RUNTIME_RESTART_SURPLUS_MARGIN_W
+                ),
+                "high_forecast_post_runtime_next_hour_ratio": (
+                    HIGH_FORECAST_POST_RUNTIME_NEXT_HOUR_RATIO
+                ),
                 "min_runtime_grid_override": self.min_runtime_grid_override,
                 "forecast_day_mode_override": self.forecast_day_mode_override,
             },
@@ -1297,6 +1306,8 @@ class SolarLoadController:
             return False
         if self.available_surplus_w >= self.load_power_w:
             return True
+        if not self._allow_post_runtime_curtailment_restart():
+            return False
         if (
             self.effective_solar_surplus_w >= self.load_power_w
             and (self.is_load_on or self.battery_power_state == "charging")
@@ -1343,6 +1354,21 @@ class SolarLoadController:
             self.load_power_w * DEFAULT_FORECAST_WAIT_MINUTES / 60 / 1000
         )
         return forecast_remaining_kwh < battery_headroom_kwh + load_buffer_kwh
+
+    def _allow_post_runtime_curtailment_restart(self) -> bool:
+        """Return whether a post-runtime high-mode restart is justified."""
+        return allow_post_runtime_curtailment_restart(
+            is_load_on=self.is_load_on,
+            runtime_remaining_minutes=self.runtime_remaining_today_minutes,
+            available_surplus_w=self.available_surplus_w,
+            effective_solar_surplus_w=self.effective_solar_surplus_w,
+            load_power_w=self.load_power_w,
+            forecast_next_hour_kwh=self.forecast_next_hour_kwh,
+            restart_surplus_margin_w=(
+                HIGH_FORECAST_POST_RUNTIME_RESTART_SURPLUS_MARGIN_W
+            ),
+            next_hour_ratio=HIGH_FORECAST_POST_RUNTIME_NEXT_HOUR_RATIO,
+        )
 
     @property
     def _high_forecast_grid_import_active(self) -> bool:
