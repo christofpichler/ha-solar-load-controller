@@ -75,6 +75,8 @@ GRID_IMPORT_SHUTDOWN_DELAY = timedelta(seconds=15)
 GRID_IMPORT_START_MARGIN_W = 50
 HIGH_FORECAST_CURTAILMENT_HEADROOM_RATIO = 0.8
 HIGH_FORECAST_NO_GRID_TOLERANCE_W = 25
+HIGH_FORECAST_POST_RUNTIME_BATTERY_TARGET_SOC = 99
+HIGH_FORECAST_POST_RUNTIME_BATTERY_HEADROOM_KWH = 0.05
 LOW_FORECAST_RUNTIME_DEADLINE_RATIO = 0.5
 PENDING_LOAD_STATE_TIMEOUT = timedelta(seconds=30)
 DEBUG_DECISION_LOG_FILENAME = "solar_load_controller_decisions.jsonl"
@@ -904,6 +906,9 @@ class SolarLoadController:
                     GRID_IMPORT_SHUTDOWN_DELAY.total_seconds()
                 ),
                 "high_grid_import_tolerance_w": HIGH_FORECAST_NO_GRID_TOLERANCE_W,
+                "high_forecast_post_runtime_battery_target_soc": (
+                    HIGH_FORECAST_POST_RUNTIME_BATTERY_TARGET_SOC
+                ),
                 "min_runtime_grid_override": self.min_runtime_grid_override,
                 "forecast_day_mode_override": self.forecast_day_mode_override,
             },
@@ -1277,6 +1282,8 @@ class SolarLoadController:
             return False
         if self._high_forecast_grid_import_active:
             return False
+        if self._should_prioritize_battery_after_runtime():
+            return False
         if self.available_surplus_w >= self.load_power_w:
             return True
         if (
@@ -1295,6 +1302,27 @@ class SolarLoadController:
             >= battery_headroom_kwh * HIGH_FORECAST_CURTAILMENT_HEADROOM_RATIO
             and self.available_surplus_w >= self.load_power_w
         )
+
+    def _should_prioritize_battery_after_runtime(self) -> bool:
+        """Return whether the battery should win over optional high-mode runtime."""
+        if self.runtime_remaining_today_minutes > 0:
+            return False
+
+        battery_headroom_kwh = self.battery_headroom_kwh
+        if (
+            battery_headroom_kwh is not None
+            and battery_headroom_kwh <= HIGH_FORECAST_POST_RUNTIME_BATTERY_HEADROOM_KWH
+        ):
+            return False
+
+        battery_soc = self.battery_soc
+        if (
+            battery_soc is not None
+            and battery_soc < HIGH_FORECAST_POST_RUNTIME_BATTERY_TARGET_SOC
+        ):
+            return True
+
+        return self.battery_power_state == "charging"
 
     @property
     def _high_forecast_grid_import_active(self) -> bool:
