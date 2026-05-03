@@ -23,7 +23,7 @@ controlled if it is represented by a Home Assistant `switch` or `input_boolean`.
 ## Why This Exists
 
 Balcony solar systems and small PV systems often have more module power than
-allowed inverter output. A typical example is a 1.8 kWp PV setup with a 1000 W
+allowed inverter output. A typical example is a 1.8 kWp PV setup with a 800 W
 inverter limit. On a strong day the battery may fill up and the inverter can no
 longer use the full available solar power. At the same time, a large household
 load like a stove can already consume the limited inverter output, so starting a
@@ -217,11 +217,11 @@ python3 -m json.tool custom_components/solar_load_controller/translations/de.jso
 python3 -m json.tool custom_components/solar_load_controller/translations/en.json
 ```
 
-## Version
+## Releases
 
 Current release candidate: `1.0.0`.
 
-See [CHANGELOG.md](CHANGELOG.md) for release notes.
+Release notes are published with GitHub releases.
 
 ## Brand Assets
 

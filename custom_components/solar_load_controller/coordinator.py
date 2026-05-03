@@ -1266,7 +1266,10 @@ class SolarLoadController:
             return False
         if self.available_surplus_w >= self.load_power_w:
             return True
-        if self.is_load_on and self.effective_solar_surplus_w >= self.load_power_w:
+        if (
+            self.effective_solar_surplus_w >= self.load_power_w
+            and (self.is_load_on or self.battery_power_state == "charging")
+        ):
             return True
 
         forecast_remaining_kwh = self.forecast_remaining_today_kwh
