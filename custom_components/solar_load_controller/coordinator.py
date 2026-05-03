@@ -565,15 +565,26 @@ class SolarLoadController:
     def _capture_daily_forecast_if_needed(self) -> None:
         """Capture today's forecast once after the morning cutoff."""
         now = dt_util.now()
-        if self._daily_forecast_date == now.date():
+        if (
+            self._daily_forecast_date == now.date()
+            and self._daily_forecast_day_class != "unknown"
+        ):
             return
         if now.time() >= time(6, 0):
-            self._capture_daily_forecast(now)
+            kwh_per_kwp = self._live_forecast_kwh_per_kwp()
+            if kwh_per_kwp is None:
+                return
+            self._capture_daily_forecast(now, kwh_per_kwp)
 
-    def _capture_daily_forecast(self, now: datetime) -> None:
+    def _capture_daily_forecast(
+        self, now: datetime, kwh_per_kwp: float | None = None
+    ) -> None:
         """Store today's forecast class so the day mode stays stable."""
         forecast_today_kwh = self._forecast_today_kwh
-        kwh_per_kwp = self._live_forecast_kwh_per_kwp()
+        if kwh_per_kwp is None:
+            kwh_per_kwp = self._live_forecast_kwh_per_kwp()
+        if kwh_per_kwp is None:
+            return
         self._daily_forecast_date = now.date()
         self._daily_forecast_captured_at = now
         self._daily_forecast_today_kwh = forecast_today_kwh
@@ -711,6 +722,7 @@ class SolarLoadController:
         else:
             if self._last_runtime_update is not None:
                 self._commit_active_runtime()
+            self._capture_daily_forecast_if_needed()
             self._async_update_grid_import_tracking()
             self._refresh_active_runtime_reason()
             self._async_notify_listeners()
@@ -752,6 +764,7 @@ class SolarLoadController:
         """Commit active runtime while the load is running."""
         if self._last_runtime_update is not None:
             self._commit_active_runtime(now)
+        self._capture_daily_forecast_if_needed()
         self._async_update_grid_import_tracking(now)
         self._refresh_active_runtime_reason()
         self._async_notify_listeners()
@@ -786,7 +799,7 @@ class SolarLoadController:
     @callback
     def _async_daily_forecast_capture(self, now: datetime) -> None:
         """Capture today's forecast classification once in the morning."""
-        self._capture_daily_forecast(now)
+        self._capture_daily_forecast_if_needed()
         self._async_notify_listeners()
         self.hass.async_create_task(self._async_apply_decision())
 
