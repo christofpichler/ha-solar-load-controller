@@ -1,0 +1,97 @@
+name: Bug report
+description: Report a reproducible problem with Solar Load Controller
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before opening a bug report, please confirm the issue still exists on the latest version of this repository.
+  - type: input
+    id: integration_version
+    attributes:
+      label: Integration version
+      description: "Example: 1.0.0"
+      placeholder: "1.0.0"
+    validations:
+      required: true
+  - type: input
+    id: home_assistant_version
+    attributes:
+      label: Home Assistant version
+      description: "Example: 2026.5.0"
+      placeholder: "2026.5.0"
+    validations:
+      required: false
+  - type: input
+    id: load_type
+    attributes:
+      label: Controlled load
+      description: Optional, but useful when comparing behavior across different setups
+      placeholder: Pool pump / boiler / immersion heater
+    validations:
+      required: false
+  - type: textarea
+    id: what_happened
+    attributes:
+      label: What happened?
+      description: Describe the problem and include the exact behavior.
+      placeholder: After changing the integration option, the load stays off although surplus is available...
+    validations:
+      required: true
+  - type: textarea
+    id: steps_to_reproduce
+    attributes:
+      label: Steps to reproduce
+      description: List the exact steps so the issue can be reproduced.
+      placeholder: |
+        1. Open Settings -> Devices & services
+        2. Open Solar Load Controller options
+        3. Change the affected setting
+        4. Submit
+    validations:
+      required: false
+  - type: textarea
+    id: expected_behavior
+    attributes:
+      label: Expected behavior
+      placeholder: The integration should save the options and reload successfully.
+    validations:
+      required: false
+  - type: textarea
+    id: setup_context
+    attributes:
+      label: Solar/load setup
+      description: Include only the values that matter for the issue.
+      placeholder: |
+        PV size:
+        Inverter limit:
+        Battery size / mode:
+        Load power:
+        Grid import limit:
+        Forecast integration:
+    validations:
+      required: false
+  - type: textarea
+    id: relevant_logs
+    attributes:
+      label: Relevant log output
+      description: Paste only the relevant lines. Remove tokens, private hostnames, and other sensitive details if needed.
+      render: shell
+    validations:
+      required: false
+  - type: textarea
+    id: decision_debug
+    attributes:
+      label: Decision debug lines
+      description: If this is a switching issue, include the relevant lines from /config/solar_load_controller_decisions.jsonl.
+      render: json
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I have searched the existing issues
+          required: true
