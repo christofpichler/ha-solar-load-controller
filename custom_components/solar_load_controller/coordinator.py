@@ -564,6 +564,17 @@ class SolarLoadController:
             return None
         return round(forecast_remaining_kwh - battery_headroom_kwh, 3)
 
+    def _battery_headroom_to_target_kwh(self, target_soc: float) -> float | None:
+        """Return estimated battery headroom in kWh up to the requested SOC target."""
+        capacity_kwh = _as_float(self.config.get(CONF_BATTERY_CAPACITY_KWH))
+        soc = self.battery_soc
+        if capacity_kwh is None or capacity_kwh <= 0 or soc is None:
+            return None
+        return round(
+            capacity_kwh * max(0.0, target_soc - min(100.0, soc)) / 100.0,
+            3,
+        )
+
     def _capture_daily_forecast_if_needed(self) -> None:
         """Capture today's forecast once after the morning cutoff."""
         now = dt_util.now()
@@ -1308,7 +1319,9 @@ class SolarLoadController:
         if self.runtime_remaining_today_minutes > 0:
             return False
 
-        battery_headroom_kwh = self.battery_headroom_kwh
+        battery_headroom_kwh = self._battery_headroom_to_target_kwh(
+            HIGH_FORECAST_POST_RUNTIME_BATTERY_TARGET_SOC
+        )
         if (
             battery_headroom_kwh is not None
             and battery_headroom_kwh <= HIGH_FORECAST_POST_RUNTIME_BATTERY_HEADROOM_KWH
@@ -1316,13 +1329,20 @@ class SolarLoadController:
             return False
 
         battery_soc = self.battery_soc
-        if (
-            battery_soc is not None
-            and battery_soc < HIGH_FORECAST_POST_RUNTIME_BATTERY_TARGET_SOC
-        ):
+        if battery_soc is None:
+            return self.battery_power_state == "charging"
+
+        if battery_soc >= HIGH_FORECAST_POST_RUNTIME_BATTERY_TARGET_SOC:
+            return False
+
+        forecast_remaining_kwh = self.forecast_remaining_today_kwh
+        if forecast_remaining_kwh is None or battery_headroom_kwh is None:
             return True
 
-        return self.battery_power_state == "charging"
+        load_buffer_kwh = (
+            self.load_power_w * DEFAULT_FORECAST_WAIT_MINUTES / 60 / 1000
+        )
+        return forecast_remaining_kwh < battery_headroom_kwh + load_buffer_kwh
 
     @property
     def _high_forecast_grid_import_active(self) -> bool:
