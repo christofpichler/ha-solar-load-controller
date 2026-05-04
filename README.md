@@ -139,16 +139,42 @@ The integration currently uses two day classes:
 The automatic day class is captured from the forecast after 06:00. A manual
 override select is available for testing with `auto`, `low`, and `high`.
 
+## Mode Logic
+
+### High Mode
+
+![High Mode concept](assets/high-mode-concept-en.png)
+
+High mode is intended for strong forecast days. It can use real PV surplus
+earlier, but after the minimum runtime is already reached it becomes
+progressively stricter about reserving the remaining forecast for:
+
+- battery charging up to the internal target of `99%`
+- expected household base load plus reserve
+- an additional late-day battery-priority buffer
+
+That late-day battery-priority buffer is scaled from the configured household
+base load and rises with a light exponential curve over the allowed day window.
+
+### Mid Mode
+
+Coming soon.
+
+### Low Mode
+
+Coming soon.
+
 ## Decision States
 
 Decision states are intentionally short English values:
 
 - `solar`
-- `curtailment`
+- `export_guard`
 - `forecast_run`
 - `forecast`
 - `grid_import`
 - `battery`
+- `battery_priority`
 - `runtime_force`
 - `runtime_met`
 - `paused`
