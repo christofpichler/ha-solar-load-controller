@@ -29,6 +29,7 @@ from custom_components.solar_load_controller.const import (
     DECISION_GRID_IMPORT_LIMIT_EXCEEDED,
     DECISION_MINIMUM_OFF_TIME_ACTIVE,
     DECISION_MINIMUM_ON_TIME_ACTIVE,
+    DECISION_MINIMUM_RUNTIME_REACHED,
     DECISION_MINIMUM_RUNTIME_REQUIRED,
     DECISION_SOLAR_SURPLUS_AVAILABLE,
 )
@@ -140,6 +141,22 @@ class DecisionEngineTest(unittest.TestCase):
 
         self.assertTrue(result.should_run)
         self.assertEqual(result.reason, DECISION_EXPORT_GUARD)
+
+    def test_runtime_met_beats_export_guard_when_no_real_extra_surplus_exists(self) -> None:
+        """Export guard should not self-sustain purely from the already running load."""
+        result = evaluate_decision(
+            make_inputs(
+                is_load_on=True,
+                runtime_remaining_minutes=0.0,
+                export_guard_run_available=False,
+                available_surplus_w=0.0,
+                effective_solar_surplus_w=400.0,
+                forecast_excess_after_battery_kwh=3.0,
+            )
+        )
+
+        self.assertFalse(result.should_run)
+        self.assertEqual(result.reason, DECISION_MINIMUM_RUNTIME_REACHED)
 
     def test_high_forecast_grid_import_turns_running_load_off(self) -> None:
         """High forecast mode should stop after min_on when grid import starts."""

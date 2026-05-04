@@ -1417,7 +1417,9 @@ class SolarLoadController:
         if not self._allow_post_runtime_export_guard_restart():
             return False
         if (
-            self.effective_solar_surplus_w >= self.load_power_w
+            (
+                self.available_surplus_w + self.usable_battery_charge_w
+            ) >= self.load_power_w
             and (self.is_load_on or self.battery_power_state == "charging")
         ):
             return True
