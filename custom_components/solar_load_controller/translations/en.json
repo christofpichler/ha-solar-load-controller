@@ -3,109 +3,37 @@
   "config": {
     "step": {
       "user": {
-        "title": "1/3 Basics",
-        "description": "Select the load and define when and how long it should run at minimum.",
+        "title": "1/5 Load",
+        "description": "Select the switch to control and enter the typical power draw of the load. Use a virtual switch if you want to test the logic first.",
         "data": {
           "name": "Name",
           "load_switch": "Load switch or virtual switch",
-          "load_power_w": "Load power (W)",
+          "load_power_w": "Load power (W)"
+        }
+      },
+      "runtime": {
+        "title": "2/5 Runtime",
+        "description": "Define the daily minimum runtime, the allowed time window, and the anti-cycling timers. These settings decide how urgently the load must still run later in the day.",
+        "data": {
           "min_daily_runtime_minutes": "Minimum daily runtime",
-          "grid_import_sensor": "Grid import (positive)",
-          "grid_export_sensor": "Grid export (positive)",
-          "grid_import_limit_w": "Max grid import in Low mode",
-          "pv_current_power_sensor": "Current PV power (optional)",
-          "pv_size_kwp": "PV array size (kWp)",
-          "inverter_limit_w": "Inverter limit (optional)",
-          "forecast_today_sensor": "Today forecast (kWh)",
-          "forecast_high_threshold_kwh_per_kwp": "High mode from (kWh/kWp)",
-          "forecast_next_hour_sensor": "Next hour forecast (optional)",
-          "forecast_remaining_today_sensor": "Remaining forecast today (optional)",
-          "battery_soc_sensor": "Battery state of charge (optional)",
-          "battery_power_sensor": "Battery power (optional)",
-          "battery_power_direction": "Battery power sign",
-          "battery_capacity_kwh": "Battery capacity (optional)",
-          "battery_mode": "Battery mode",
-          "min_battery_soc": "Minimum battery SOC",
-          "debug_sensor_enabled": "Show debug sensor",
-          "min_runtime_grid_override": "Low minimum runtime may exceed grid limit",
           "earliest_start_time": "Start allowed from",
-          "min_on_minutes": "Minimum on time (anti-cycling)",
-          "min_off_minutes": "Minimum off time (anti-cycling)",
-          "latest_finish_time": "Runtime must finish by"
+          "latest_finish_time": "Runtime must finish by",
+          "min_on_minutes": "Minimum on time",
+          "min_off_minutes": "Minimum off time"
         },
         "data_description": {
-          "debug_sensor_enabled": "Creates the decision debug sensor and writes one JSONL line for every changed decision to /config/solar_load_controller_decisions.jsonl. The exact path is shown on the debug sensor in the debug_log.path attribute. Retention: 7 days or 2000 entries."
-        },
-        "sections": {
-          "load_options": {
-            "name": "Load",
-            "data": {
-              "name": "Name",
-              "load_switch": "Load switch or virtual switch",
-              "load_power_w": "Load power (W)"
-            }
-          },
-          "runtime_options": {
-            "name": "Runtime",
-            "data": {
-              "min_daily_runtime_minutes": "Minimum daily runtime",
-              "earliest_start_time": "Start allowed from",
-              "min_on_minutes": "Minimum on time (anti-cycling)",
-              "min_off_minutes": "Minimum off time (anti-cycling)",
-              "latest_finish_time": "Runtime must finish by"
-            }
-          },
-          "grid_options": {
-            "name": "Grid",
-            "data": {
-              "grid_import_sensor": "Grid import (positive)",
-              "grid_export_sensor": "Grid export (positive)",
-              "grid_import_limit_w": "Max grid import in Low mode"
-            }
-          },
-          "pv_options": {
-            "name": "PV and forecast",
-            "data": {
-              "pv_current_power_sensor": "Current PV power (optional)",
-              "pv_size_kwp": "PV array size (kWp)",
-              "inverter_limit_w": "Inverter limit (optional)",
-              "forecast_today_sensor": "Today forecast (kWh)",
-              "forecast_high_threshold_kwh_per_kwp": "High mode from (kWh/kWp)",
-              "forecast_next_hour_sensor": "Next hour forecast (optional)",
-              "forecast_remaining_today_sensor": "Remaining forecast today (optional)"
-            }
-          },
-          "battery_options": {
-            "name": "Battery",
-            "data": {
-              "battery_soc_sensor": "Battery state of charge (optional)",
-              "battery_power_sensor": "Battery power (optional)",
-              "battery_power_direction": "Battery power sign",
-              "battery_capacity_kwh": "Battery capacity (optional)",
-              "battery_mode": "Battery mode",
-              "min_battery_soc": "Minimum battery SOC"
-            }
-          },
-          "control_options": {
-            "name": "Control",
-            "description": "Debug is intended for troubleshooting. When enabled, it creates a debug sensor and writes a decision file in the Home Assistant config folder.",
-            "data": {
-              "debug_sensor_enabled": "Show debug sensor",
-              "min_runtime_grid_override": "Low minimum runtime may exceed grid limit"
-            },
-            "data_description": {
-              "debug_sensor_enabled": "Writes decision changes with sensor values to /config/solar_load_controller_decisions.jsonl. The exact path is shown on the debug sensor under debug_log.path."
-            }
-          }
+          "min_daily_runtime_minutes": "Guaranteed runtime target for the day. If solar is not enough, Low mode can still force this later.",
+          "min_on_minutes": "Prevents rapid off/on switching after the load has started.",
+          "min_off_minutes": "Prevents immediate restarts after the load has stopped."
         }
       },
       "energy": {
-        "title": "2/3 Energy and forecast",
-        "description": "Select grid import, grid export, and the PV forecast. The forecast is required and sets the daily Low or High mode.",
+        "title": "3/5 Grid and Forecast",
+        "description": "Connect the live grid sensors and the solar forecast. This page decides when the day is treated as Low or High and how much grid import is tolerated in Low mode.",
         "data": {
           "grid_import_sensor": "Grid import (positive)",
           "grid_export_sensor": "Grid export (positive)",
-          "grid_import_limit_w": "Max grid import in Low mode",
+          "grid_import_limit_w": "Grid limit in Low mode",
           "pv_current_power_sensor": "Current PV power (optional)",
           "pv_size_kwp": "PV array size (kWp)",
           "inverter_limit_w": "Inverter limit (optional)",
@@ -114,71 +42,40 @@
           "forecast_next_hour_sensor": "Next hour forecast (optional)",
           "forecast_remaining_today_sensor": "Remaining forecast today (optional)"
         },
-        "sections": {
-          "grid_options": {
-            "name": "Grid",
-            "description": "Both sensors must provide positive watt values. Short grid-import spikes are ignored by the 15-second delay.",
-            "data": {
-              "grid_import_sensor": "Grid import (positive)",
-              "grid_export_sensor": "Grid export (positive)",
-              "grid_import_limit_w": "Max grid import in Low mode"
-            }
-          },
-          "pv_options": {
-            "name": "PV and forecast",
-            "description": "The daily forecast is used for Low/High classification. High means PV surplus has priority.",
-            "data": {
-              "pv_current_power_sensor": "Current PV power (optional)",
-              "pv_size_kwp": "PV array size (kWp)",
-              "inverter_limit_w": "Inverter limit (optional)",
-              "forecast_today_sensor": "Today forecast (kWh)",
-              "forecast_high_threshold_kwh_per_kwp": "High mode from (kWh/kWp)",
-              "forecast_next_hour_sensor": "Next hour forecast (optional)",
-              "forecast_remaining_today_sensor": "Remaining forecast today (optional)"
-            }
-          }
+        "data_description": {
+          "grid_import_limit_w": "Maximum grid import allowed in Low mode before the load is blocked or stopped. High mode uses a much stricter import rule.",
+          "forecast_high_threshold_kwh_per_kwp": "If today's forecast per kWp reaches this value, the day is treated as High mode.",
+          "forecast_next_hour_sensor": "Improves short-term decisions such as waiting or restarting later in the day.",
+          "forecast_remaining_today_sensor": "Improves calculations for how much energy is still expected for the rest of the day."
         }
       },
-      "advanced": {
-        "title": "3/3 Battery and diagnostics",
-        "description": "Battery values are optional but improve decisions. Enable debug only when you want to analyze behavior.",
+      "battery": {
+        "title": "4/5 Battery",
+        "description": "Battery inputs are optional but improve decisions. Capacity and SOC are used to estimate whether the remaining forecast can still fill the battery later in the day.",
         "data": {
           "battery_soc_sensor": "Battery state of charge (optional)",
           "battery_power_sensor": "Battery power (optional)",
           "battery_power_direction": "Battery power sign",
           "battery_capacity_kwh": "Battery capacity (optional)",
           "battery_mode": "Battery mode",
-          "min_battery_soc": "Minimum battery SOC",
+          "min_battery_soc": "Minimum battery SOC"
+        },
+        "data_description": {
+          "battery_power_direction": "Set how the raw battery power sensor behaves. The integration normalizes it so positive means charging internally.",
+          "battery_mode": "Choose whether the controller should protect the battery more conservatively or actively use it when needed.",
+          "min_battery_soc": "In Use mode, the controller will avoid forced battery use below this SOC threshold."
+        }
+      },
+      "advanced": {
+        "title": "5/5 Diagnostics and Fallback",
+        "description": "Enable debug output only for troubleshooting. The Low-mode runtime override is the fallback that still guarantees runtime even if the normal grid limit would otherwise block the load.",
+        "data": {
           "debug_sensor_enabled": "Enable debug sensor and file",
           "min_runtime_grid_override": "Low minimum runtime may exceed grid limit"
         },
         "data_description": {
-          "debug_sensor_enabled": "Creates the decision debug sensor and writes one JSONL line for every changed decision to /config/solar_load_controller_decisions.jsonl. The exact path is shown on the debug sensor in the debug_log.path attribute. Retention: 7 days or 2000 entries."
-        },
-        "sections": {
-          "battery_options": {
-            "name": "Battery",
-            "description": "If battery power is set, the logic can better distinguish charging from discharging.",
-            "data": {
-              "battery_soc_sensor": "Battery state of charge (optional)",
-              "battery_power_sensor": "Battery power (optional)",
-              "battery_power_direction": "Battery power sign",
-              "battery_capacity_kwh": "Battery capacity (optional)",
-              "battery_mode": "Battery mode",
-              "min_battery_soc": "Minimum battery SOC"
-            }
-          },
-          "control_options": {
-            "name": "Diagnostics and Low mode",
-            "description": "Debug is intended for troubleshooting. When enabled, it writes a decision file in the Home Assistant config folder.",
-            "data": {
-              "debug_sensor_enabled": "Enable debug sensor and file",
-              "min_runtime_grid_override": "Low minimum runtime may exceed grid limit"
-            },
-            "data_description": {
-              "debug_sensor_enabled": "Writes decision changes with sensor values to /config/solar_load_controller_decisions.jsonl. The exact path is shown on the debug sensor under debug_log.path."
-            }
-          }
+          "debug_sensor_enabled": "Creates the decision debug sensor and writes one JSONL line for every changed decision to /config/solar_load_controller_decisions.jsonl. The exact path is shown on the debug sensor in the debug_log.path attribute. Retention: 7 days or 2000 entries.",
+          "min_runtime_grid_override": "If enabled, Low mode may still run the load to reach the daily minimum runtime even when the normal Low-mode grid limit would block the start."
         }
       }
     }
@@ -186,109 +83,37 @@
   "options": {
     "step": {
       "init": {
-        "title": "Options: 1/3 Basics",
-        "description": "Adjust load, runtime window, and anti-cycling behavior.",
+        "title": "Options: 1/5 Load",
+        "description": "Adjust the controlled switch and the typical power draw of the load.",
         "data": {
           "name": "Name",
           "load_switch": "Load switch or virtual switch",
-          "load_power_w": "Load power (W)",
+          "load_power_w": "Load power (W)"
+        }
+      },
+      "runtime": {
+        "title": "Options: 2/5 Runtime",
+        "description": "Adjust the guaranteed daily runtime, time window, and anti-cycling timers.",
+        "data": {
           "min_daily_runtime_minutes": "Minimum daily runtime",
-          "grid_import_sensor": "Grid import (positive)",
-          "grid_export_sensor": "Grid export (positive)",
-          "grid_import_limit_w": "Max grid import in Low mode",
-          "pv_current_power_sensor": "Current PV power (optional)",
-          "pv_size_kwp": "PV array size (kWp)",
-          "inverter_limit_w": "Inverter limit (optional)",
-          "forecast_today_sensor": "Today forecast (kWh)",
-          "forecast_high_threshold_kwh_per_kwp": "High mode from (kWh/kWp)",
-          "forecast_next_hour_sensor": "Next hour forecast (optional)",
-          "forecast_remaining_today_sensor": "Remaining forecast today (optional)",
-          "battery_soc_sensor": "Battery state of charge (optional)",
-          "battery_power_sensor": "Battery power (optional)",
-          "battery_power_direction": "Battery power sign",
-          "battery_capacity_kwh": "Battery capacity (optional)",
-          "battery_mode": "Battery mode",
-          "min_battery_soc": "Minimum battery SOC",
-          "debug_sensor_enabled": "Show debug sensor",
-          "min_runtime_grid_override": "Low minimum runtime may exceed grid limit",
           "earliest_start_time": "Start allowed from",
-          "min_on_minutes": "Minimum on time (anti-cycling)",
-          "min_off_minutes": "Minimum off time (anti-cycling)",
-          "latest_finish_time": "Runtime must finish by"
+          "latest_finish_time": "Runtime must finish by",
+          "min_on_minutes": "Minimum on time",
+          "min_off_minutes": "Minimum off time"
         },
         "data_description": {
-          "debug_sensor_enabled": "Creates the decision debug sensor and writes one JSONL line for every changed decision to /config/solar_load_controller_decisions.jsonl. The exact path is shown on the debug sensor in the debug_log.path attribute. Retention: 7 days or 2000 entries."
-        },
-        "sections": {
-          "load_options": {
-            "name": "Load",
-            "data": {
-              "name": "Name",
-              "load_switch": "Load switch or virtual switch",
-              "load_power_w": "Load power (W)"
-            }
-          },
-          "runtime_options": {
-            "name": "Runtime",
-            "data": {
-              "min_daily_runtime_minutes": "Minimum daily runtime",
-              "earliest_start_time": "Start allowed from",
-              "min_on_minutes": "Minimum on time (anti-cycling)",
-              "min_off_minutes": "Minimum off time (anti-cycling)",
-              "latest_finish_time": "Runtime must finish by"
-            }
-          },
-          "grid_options": {
-            "name": "Grid",
-            "data": {
-              "grid_import_sensor": "Grid import (positive)",
-              "grid_export_sensor": "Grid export (positive)",
-              "grid_import_limit_w": "Max grid import in Low mode"
-            }
-          },
-          "pv_options": {
-            "name": "PV and forecast",
-            "data": {
-              "pv_current_power_sensor": "Current PV power (optional)",
-              "pv_size_kwp": "PV array size (kWp)",
-              "inverter_limit_w": "Inverter limit (optional)",
-              "forecast_today_sensor": "Today forecast (kWh)",
-              "forecast_high_threshold_kwh_per_kwp": "High mode from (kWh/kWp)",
-              "forecast_next_hour_sensor": "Next hour forecast (optional)",
-              "forecast_remaining_today_sensor": "Remaining forecast today (optional)"
-            }
-          },
-          "battery_options": {
-            "name": "Battery",
-            "data": {
-              "battery_soc_sensor": "Battery state of charge (optional)",
-              "battery_power_sensor": "Battery power (optional)",
-              "battery_power_direction": "Battery power sign",
-              "battery_capacity_kwh": "Battery capacity (optional)",
-              "battery_mode": "Battery mode",
-              "min_battery_soc": "Minimum battery SOC"
-            }
-          },
-          "control_options": {
-            "name": "Control",
-            "description": "Debug is intended for troubleshooting. When enabled, it creates a debug sensor and writes a decision file in the Home Assistant config folder.",
-            "data": {
-              "debug_sensor_enabled": "Show debug sensor",
-              "min_runtime_grid_override": "Low minimum runtime may exceed grid limit"
-            },
-            "data_description": {
-              "debug_sensor_enabled": "Writes decision changes with sensor values to /config/solar_load_controller_decisions.jsonl. The exact path is shown on the debug sensor under debug_log.path."
-            }
-          }
+          "min_daily_runtime_minutes": "Guaranteed runtime target for the day. If solar is not enough, Low mode can still force this later.",
+          "min_on_minutes": "Prevents rapid off/on switching after the load has started.",
+          "min_off_minutes": "Prevents immediate restarts after the load has stopped."
         }
       },
       "energy": {
-        "title": "Options: 2/3 Energy and forecast",
-        "description": "Adjust grid sensors, PV system values, and forecast sensors.",
+        "title": "Options: 3/5 Grid and Forecast",
+        "description": "Adjust the live grid sensors and the forecast inputs. This page controls Low vs High classification and the tolerated Low-mode grid import.",
         "data": {
           "grid_import_sensor": "Grid import (positive)",
           "grid_export_sensor": "Grid export (positive)",
-          "grid_import_limit_w": "Max grid import in Low mode",
+          "grid_import_limit_w": "Grid limit in Low mode",
           "pv_current_power_sensor": "Current PV power (optional)",
           "pv_size_kwp": "PV array size (kWp)",
           "inverter_limit_w": "Inverter limit (optional)",
@@ -297,70 +122,40 @@
           "forecast_next_hour_sensor": "Next hour forecast (optional)",
           "forecast_remaining_today_sensor": "Remaining forecast today (optional)"
         },
-        "sections": {
-          "grid_options": {
-            "name": "Grid",
-            "description": "Both sensors must provide positive watt values.",
-            "data": {
-              "grid_import_sensor": "Grid import (positive)",
-              "grid_export_sensor": "Grid export (positive)",
-              "grid_import_limit_w": "Max grid import in Low mode"
-            }
-          },
-          "pv_options": {
-            "name": "PV and forecast",
-            "description": "The daily forecast determines whether the day is classified as Low or High.",
-            "data": {
-              "pv_current_power_sensor": "Current PV power (optional)",
-              "pv_size_kwp": "PV array size (kWp)",
-              "inverter_limit_w": "Inverter limit (optional)",
-              "forecast_today_sensor": "Today forecast (kWh)",
-              "forecast_high_threshold_kwh_per_kwp": "High mode from (kWh/kWp)",
-              "forecast_next_hour_sensor": "Next hour forecast (optional)",
-              "forecast_remaining_today_sensor": "Remaining forecast today (optional)"
-            }
-          }
+        "data_description": {
+          "grid_import_limit_w": "Maximum grid import allowed in Low mode before the load is blocked or stopped. High mode uses a much stricter import rule.",
+          "forecast_high_threshold_kwh_per_kwp": "If today's forecast per kWp reaches this value, the day is treated as High mode.",
+          "forecast_next_hour_sensor": "Improves short-term decisions such as waiting or restarting later in the day.",
+          "forecast_remaining_today_sensor": "Improves calculations for how much energy is still expected for the rest of the day."
         }
       },
-      "advanced": {
-        "title": "Options: 3/3 Battery and diagnostics",
-        "description": "Adjust optional battery information and debug behavior.",
+      "battery": {
+        "title": "Options: 4/5 Battery",
+        "description": "Adjust optional battery inputs and thresholds. These values help the controller decide whether the remaining forecast should first go into the battery.",
         "data": {
           "battery_soc_sensor": "Battery state of charge (optional)",
           "battery_power_sensor": "Battery power (optional)",
           "battery_power_direction": "Battery power sign",
           "battery_capacity_kwh": "Battery capacity (optional)",
           "battery_mode": "Battery mode",
-          "min_battery_soc": "Minimum battery SOC",
+          "min_battery_soc": "Minimum battery SOC"
+        },
+        "data_description": {
+          "battery_power_direction": "Set how the raw battery power sensor behaves. The integration normalizes it so positive means charging internally.",
+          "battery_mode": "Choose whether the controller should protect the battery more conservatively or actively use it when needed.",
+          "min_battery_soc": "In Use mode, the controller will avoid forced battery use below this SOC threshold."
+        }
+      },
+      "advanced": {
+        "title": "Options: 5/5 Diagnostics and Fallback",
+        "description": "Adjust debug output and the Low-mode fallback behavior that guarantees minimum runtime.",
+        "data": {
           "debug_sensor_enabled": "Enable debug sensor and file",
           "min_runtime_grid_override": "Low minimum runtime may exceed grid limit"
         },
         "data_description": {
-          "debug_sensor_enabled": "Creates the decision debug sensor and writes one JSONL line for every changed decision to /config/solar_load_controller_decisions.jsonl. The exact path is shown on the debug sensor in the debug_log.path attribute. Retention: 7 days or 2000 entries."
-        },
-        "sections": {
-          "battery_options": {
-            "name": "Battery",
-            "data": {
-              "battery_soc_sensor": "Battery state of charge (optional)",
-              "battery_power_sensor": "Battery power (optional)",
-              "battery_power_direction": "Battery power sign",
-              "battery_capacity_kwh": "Battery capacity (optional)",
-              "battery_mode": "Battery mode",
-              "min_battery_soc": "Minimum battery SOC"
-            }
-          },
-          "control_options": {
-            "name": "Diagnostics and Low mode",
-            "description": "Debug is intended for troubleshooting. When enabled, it writes a decision file in the Home Assistant config folder.",
-            "data": {
-              "debug_sensor_enabled": "Enable debug sensor and file",
-              "min_runtime_grid_override": "Low minimum runtime may exceed grid limit"
-            },
-            "data_description": {
-              "debug_sensor_enabled": "Writes decision changes with sensor values to /config/solar_load_controller_decisions.jsonl. The exact path is shown on the debug sensor under debug_log.path."
-            }
-          }
+          "debug_sensor_enabled": "Creates the decision debug sensor and writes one JSONL line for every changed decision to /config/solar_load_controller_decisions.jsonl. The exact path is shown on the debug sensor in the debug_log.path attribute. Retention: 7 days or 2000 entries.",
+          "min_runtime_grid_override": "If enabled, Low mode may still run the load to reach the daily minimum runtime even when the normal Low-mode grid limit would block the start."
         }
       }
     }
@@ -392,10 +187,26 @@
         "name": "Available surplus"
       },
       "decision_reason": {
-        "name": "Decision reason"
+        "name": "Decision reason",
+        "state": {
+          "solar": "Solar",
+          "export_guard": "Export Guard",
+          "forecast_run": "Forecast Run",
+          "forecast": "Forecast Wait",
+          "grid_import": "Grid Limit",
+          "battery": "Battery Guard",
+          "runtime_force": "Runtime Force",
+          "runtime_met": "Runtime Met",
+          "paused": "Paused",
+          "waiting": "Standby",
+          "missing_sensor": "Sensor Missing",
+          "min_on": "Min On",
+          "min_off": "Min Off",
+          "time_window": "Time Window"
+        }
       },
       "decision_debug": {
-        "name": "Decision debug"
+        "name": "Decision Debug"
       },
       "energy_today": {
         "name": "Energy today"
@@ -407,7 +218,13 @@
         "name": "Forced runtime today"
       },
       "forecast_day_mode": {
-        "name": "Forecast day mode"
+        "name": "Forecast Day Mode",
+        "state": {
+          "auto": "Auto",
+          "low": "Low",
+          "high": "High",
+          "unknown": "Unknown"
+        }
       },
       "runtime_remaining_today": {
         "name": "Runtime remaining today"
@@ -424,12 +241,12 @@
     },
     "switch": {
       "automation_paused": {
-        "name": "Automation paused"
+        "name": "Automation Paused"
       }
     },
     "select": {
       "forecast_day_mode_override": {
-        "name": "Forecast day mode override"
+        "name": "Forecast Day Mode Override"
       }
     }
   }

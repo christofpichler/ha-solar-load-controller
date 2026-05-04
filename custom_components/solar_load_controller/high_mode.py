@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 
-def allow_post_runtime_curtailment_restart(
+def allow_post_runtime_export_guard_restart(
     *,
     is_load_on: bool,
     runtime_remaining_minutes: float,
@@ -14,7 +14,7 @@ def allow_post_runtime_curtailment_restart(
     restart_surplus_margin_w: float,
     next_hour_ratio: float,
 ) -> bool:
-    """Return whether high-mode curtailment may restart after runtime is met.
+    """Return whether high-mode export guard may restart after runtime is met.
 
     Once the minimum daily runtime is already satisfied, restarting purely from
     battery charge power should be more conservative than restarting from real

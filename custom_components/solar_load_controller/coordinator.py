@@ -47,7 +47,7 @@ from .const import (
     CONF_PV_CURRENT_POWER_SENSOR,
     CONF_PV_SIZE_KWP,
     DECISION_AUTOMATION_PAUSED,
-    DECISION_CURTAILMENT_PREVENTION,
+    DECISION_EXPORT_GUARD,
     DECISION_FORECAST_ASSISTED_RUN,
     DECISION_GRID_IMPORT_LIMIT_EXCEEDED,
     DECISION_MINIMUM_RUNTIME_REQUIRED,
@@ -67,7 +67,8 @@ from .const import (
     FORECAST_DAY_MODE_LOW,
 )
 from .decision_engine import DecisionInputs, DecisionResult, evaluate_decision
-from .high_mode import allow_post_runtime_curtailment_restart
+from .energy import required_input_energy
+from .high_mode import allow_post_runtime_export_guard_restart
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -76,6 +77,7 @@ GRID_IMPORT_SHUTDOWN_DELAY = timedelta(seconds=15)
 GRID_IMPORT_START_MARGIN_W = 50
 HIGH_FORECAST_CURTAILMENT_HEADROOM_RATIO = 0.8
 HIGH_FORECAST_NO_GRID_TOLERANCE_W = 25
+BATTERY_CHARGING_EFFICIENCY = 0.9
 HIGH_FORECAST_POST_RUNTIME_BATTERY_TARGET_SOC = 99
 HIGH_FORECAST_POST_RUNTIME_BATTERY_HEADROOM_KWH = 0.05
 HIGH_FORECAST_POST_RUNTIME_RESTART_SURPLUS_MARGIN_W = 75
@@ -560,12 +562,29 @@ class SolarLoadController:
 
     @property
     def forecast_excess_after_battery_kwh(self) -> float | None:
-        """Return forecast energy likely to exceed remaining battery headroom."""
+        """Return forecast energy likely to exceed battery charging demand."""
         forecast_remaining_kwh = self.forecast_remaining_today_kwh
-        battery_headroom_kwh = self.battery_headroom_kwh
-        if forecast_remaining_kwh is None or battery_headroom_kwh is None:
+        battery_charge_required_kwh = self.battery_charge_required_kwh
+        if (
+            forecast_remaining_kwh is None
+            or battery_charge_required_kwh is None
+        ):
             return None
-        return round(forecast_remaining_kwh - battery_headroom_kwh, 3)
+        return round(forecast_remaining_kwh - battery_charge_required_kwh, 3)
+
+    @property
+    def battery_charge_required_kwh(self) -> float | None:
+        """Return solar energy needed to fill the current battery headroom."""
+        return self._charging_input_energy_for_storage(self.battery_headroom_kwh)
+
+    @property
+    def high_forecast_post_runtime_battery_charge_required_kwh(self) -> float | None:
+        """Return charging input needed to reach the high-mode target SOC."""
+        return self._charging_input_energy_for_storage(
+            self._battery_headroom_to_target_kwh(
+                HIGH_FORECAST_POST_RUNTIME_BATTERY_TARGET_SOC
+            )
+        )
 
     def _battery_headroom_to_target_kwh(self, target_soc: float) -> float | None:
         """Return estimated battery headroom in kWh up to the requested SOC target."""
@@ -577,6 +596,12 @@ class SolarLoadController:
             capacity_kwh * max(0.0, target_soc - min(100.0, soc)) / 100.0,
             3,
         )
+
+    def _charging_input_energy_for_storage(
+        self, storage_kwh: float | None
+    ) -> float | None:
+        """Return the PV energy required to store the requested energy."""
+        return required_input_energy(storage_kwh, BATTERY_CHARGING_EFFICIENCY)
 
     def _capture_daily_forecast_if_needed(self) -> None:
         """Capture today's forecast once after the morning cutoff."""
@@ -693,10 +718,14 @@ class SolarLoadController:
             min_on_remaining_minutes=self.min_on_remaining_minutes,
             min_off_active=self.min_off_active,
             min_off_remaining_minutes=self.min_off_remaining_minutes,
-            curtailment_prevention_run_available=(
-                self._curtailment_prevention_run_available
+            export_guard_run_available=(
+                self._export_guard_run_available
             ),
             battery_headroom_kwh=self.battery_headroom_kwh,
+            battery_charge_required_kwh=self.battery_charge_required_kwh,
+            high_forecast_post_runtime_battery_charge_required_kwh=(
+                self.high_forecast_post_runtime_battery_charge_required_kwh
+            ),
             forecast_excess_after_battery_kwh=(
                 self.forecast_excess_after_battery_kwh
             ),
@@ -920,6 +949,7 @@ class SolarLoadController:
                     GRID_IMPORT_SHUTDOWN_DELAY.total_seconds()
                 ),
                 "high_grid_import_tolerance_w": HIGH_FORECAST_NO_GRID_TOLERANCE_W,
+                "battery_charging_efficiency": BATTERY_CHARGING_EFFICIENCY,
                 "high_forecast_post_runtime_battery_target_soc": (
                     HIGH_FORECAST_POST_RUNTIME_BATTERY_TARGET_SOC
                 ),
@@ -1043,7 +1073,7 @@ class SolarLoadController:
         if self._active_runtime_reason not in {
             DECISION_SOLAR_SURPLUS_AVAILABLE,
             DECISION_FORECAST_ASSISTED_RUN,
-            DECISION_CURTAILMENT_PREVENTION,
+            DECISION_EXPORT_GUARD,
         }:
             return self._solar_runtime_seconds
         return self._solar_runtime_seconds + self._active_delta_seconds()
@@ -1074,7 +1104,7 @@ class SolarLoadController:
         if reason in {
             DECISION_SOLAR_SURPLUS_AVAILABLE,
             DECISION_FORECAST_ASSISTED_RUN,
-            DECISION_CURTAILMENT_PREVENTION,
+            DECISION_EXPORT_GUARD,
         }:
             self._solar_runtime_seconds += delta_seconds
         elif reason == DECISION_MINIMUM_RUNTIME_REQUIRED:
@@ -1092,7 +1122,7 @@ class SolarLoadController:
         if reason in {
             DECISION_SOLAR_SURPLUS_AVAILABLE,
             DECISION_FORECAST_ASSISTED_RUN,
-            DECISION_CURTAILMENT_PREVENTION,
+            DECISION_EXPORT_GUARD,
             DECISION_MINIMUM_RUNTIME_REQUIRED,
         }:
             self._active_runtime_reason = reason
@@ -1294,7 +1324,7 @@ class SolarLoadController:
         return False
 
     @property
-    def _curtailment_prevention_run_available(self) -> bool:
+    def _export_guard_run_available(self) -> bool:
         """Return whether forecast suggests running now to avoid clipping later."""
         if not self._forecast_enabled:
             return False
@@ -1306,7 +1336,7 @@ class SolarLoadController:
             return False
         if self.available_surplus_w >= self.load_power_w:
             return True
-        if not self._allow_post_runtime_curtailment_restart():
+        if not self._allow_post_runtime_export_guard_restart():
             return False
         if (
             self.effective_solar_surplus_w >= self.load_power_w
@@ -1315,13 +1345,16 @@ class SolarLoadController:
             return True
 
         forecast_remaining_kwh = self.forecast_remaining_today_kwh
-        battery_headroom_kwh = self.battery_headroom_kwh
-        if forecast_remaining_kwh is None or battery_headroom_kwh is None:
+        battery_charge_required_kwh = self.battery_charge_required_kwh
+        if (
+            forecast_remaining_kwh is None
+            or battery_charge_required_kwh is None
+        ):
             return False
 
         return (
             forecast_remaining_kwh
-            >= battery_headroom_kwh * HIGH_FORECAST_CURTAILMENT_HEADROOM_RATIO
+            >= battery_charge_required_kwh * HIGH_FORECAST_CURTAILMENT_HEADROOM_RATIO
             and self.available_surplus_w >= self.load_power_w
         )
 
@@ -1332,6 +1365,9 @@ class SolarLoadController:
 
         battery_headroom_kwh = self._battery_headroom_to_target_kwh(
             HIGH_FORECAST_POST_RUNTIME_BATTERY_TARGET_SOC
+        )
+        battery_charge_required_kwh = self._charging_input_energy_for_storage(
+            battery_headroom_kwh
         )
         if (
             battery_headroom_kwh is not None
@@ -1347,17 +1383,23 @@ class SolarLoadController:
             return False
 
         forecast_remaining_kwh = self.forecast_remaining_today_kwh
-        if forecast_remaining_kwh is None or battery_headroom_kwh is None:
+        if (
+            forecast_remaining_kwh is None
+            or battery_charge_required_kwh is None
+        ):
             return True
 
         load_buffer_kwh = (
             self.load_power_w * DEFAULT_FORECAST_WAIT_MINUTES / 60 / 1000
         )
-        return forecast_remaining_kwh < battery_headroom_kwh + load_buffer_kwh
+        return (
+            forecast_remaining_kwh
+            < battery_charge_required_kwh + load_buffer_kwh
+        )
 
-    def _allow_post_runtime_curtailment_restart(self) -> bool:
+    def _allow_post_runtime_export_guard_restart(self) -> bool:
         """Return whether a post-runtime high-mode restart is justified."""
-        return allow_post_runtime_curtailment_restart(
+        return allow_post_runtime_export_guard_restart(
             is_load_on=self.is_load_on,
             runtime_remaining_minutes=self.runtime_remaining_today_minutes,
             available_surplus_w=self.available_surplus_w,

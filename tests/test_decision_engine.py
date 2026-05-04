@@ -24,7 +24,7 @@ solar_load_controller.__path__ = [str(PACKAGE_DIR)]
 setattr(custom_components, "solar_load_controller", solar_load_controller)
 
 from custom_components.solar_load_controller.const import (
-    DECISION_CURTAILMENT_PREVENTION,
+    DECISION_EXPORT_GUARD,
     DECISION_FORECAST_WAIT,
     DECISION_GRID_IMPORT_LIMIT_EXCEEDED,
     DECISION_MINIMUM_OFF_TIME_ACTIVE,
@@ -67,8 +67,10 @@ def make_inputs(**overrides: object) -> DecisionInputs:
         min_on_remaining_minutes=0.0,
         min_off_active=False,
         min_off_remaining_minutes=0.0,
-        curtailment_prevention_run_available=False,
+        export_guard_run_available=False,
         battery_headroom_kwh=4.0,
+        battery_charge_required_kwh=4.444,
+        high_forecast_post_runtime_battery_charge_required_kwh=4.2,
         forecast_excess_after_battery_kwh=-1.0,
         forecast_assisted_run_available=False,
         high_forecast_grid_import_active=False,
@@ -109,11 +111,11 @@ class DecisionEngineTest(unittest.TestCase):
         self.assertFalse(result.should_run)
         self.assertEqual(result.reason, DECISION_FORECAST_WAIT)
 
-    def test_curtailment_prevention_runs_before_runtime_is_due(self) -> None:
-        """High forecast curtailment prevention should start the load early."""
+    def test_export_guard_runs_before_runtime_is_due(self) -> None:
+        """High forecast export guard should start the load early."""
         result = evaluate_decision(
             make_inputs(
-                curtailment_prevention_run_available=True,
+                export_guard_run_available=True,
                 should_wait_for_forecast=True,
                 battery_soc=20.0,
                 battery_power_state="discharging",
@@ -121,20 +123,20 @@ class DecisionEngineTest(unittest.TestCase):
         )
 
         self.assertTrue(result.should_run)
-        self.assertEqual(result.reason, DECISION_CURTAILMENT_PREVENTION)
+        self.assertEqual(result.reason, DECISION_EXPORT_GUARD)
 
-    def test_curtailment_prevention_can_run_after_minimum_runtime(self) -> None:
-        """Curtailment prevention may continue after minimum runtime is met."""
+    def test_export_guard_can_run_after_minimum_runtime(self) -> None:
+        """Export guard may continue after minimum runtime is met."""
         result = evaluate_decision(
             make_inputs(
                 runtime_remaining_minutes=0.0,
-                curtailment_prevention_run_available=True,
+                export_guard_run_available=True,
                 forecast_excess_after_battery_kwh=1.2,
             )
         )
 
         self.assertTrue(result.should_run)
-        self.assertEqual(result.reason, DECISION_CURTAILMENT_PREVENTION)
+        self.assertEqual(result.reason, DECISION_EXPORT_GUARD)
 
     def test_high_forecast_grid_import_turns_running_load_off(self) -> None:
         """High forecast mode should stop after min_on when grid import starts."""
@@ -142,7 +144,7 @@ class DecisionEngineTest(unittest.TestCase):
             make_inputs(
                 is_load_on=True,
                 high_forecast_grid_import_active=True,
-                curtailment_prevention_run_available=True,
+                export_guard_run_available=True,
             )
         )
 
@@ -157,7 +159,7 @@ class DecisionEngineTest(unittest.TestCase):
                 is_load_on=True,
                 min_on_active=True,
                 high_forecast_grid_import_active=True,
-                curtailment_prevention_run_available=True,
+                export_guard_run_available=True,
             )
         )
 
@@ -227,13 +229,13 @@ class DecisionEngineTest(unittest.TestCase):
         self.assertFalse(result.should_run)
         self.assertEqual(result.reason, DECISION_MINIMUM_OFF_TIME_ACTIVE)
 
-    def test_min_off_blocks_high_forecast_curtailment_start(self) -> None:
+    def test_min_off_blocks_high_forecast_export_guard_start(self) -> None:
         """Min off should avoid rapid high-mode restarts."""
         result = evaluate_decision(
             make_inputs(
                 min_off_active=True,
                 min_off_remaining_minutes=8.0,
-                curtailment_prevention_run_available=True,
+                export_guard_run_available=True,
             )
         )
 
