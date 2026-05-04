@@ -3,7 +3,7 @@
   "config": {
     "step": {
       "user": {
-        "title": "1/5 Verbraucher",
+        "title": "1/6 Verbraucher",
         "description": "Wähle den Schalter, den die Integration steuern soll, und trage die typische Leistung des Verbrauchers ein. Für reine Tests kannst du auch einen virtuellen Schalter verwenden.",
         "data": {
           "name": "Name",
@@ -12,7 +12,7 @@
         }
       },
       "runtime": {
-        "title": "2/5 Laufzeit",
+        "title": "2/6 Laufzeit",
         "description": "Lege die tägliche Mindestlaufzeit, das erlaubte Zeitfenster und den Taktschutz fest. Diese Seite bestimmt, wie dringend der Verbraucher später am Tag noch laufen muss.",
         "data": {
           "min_daily_runtime_minutes": "Mindestlaufzeit pro Tag",
@@ -28,29 +28,25 @@
         }
       },
       "energy": {
-        "title": "3/5 Netz und Prognose",
-        "description": "Verbinde die Live-Netzsensoren und die PV-Prognose. Diese Seite entscheidet, ob der Tag als Low oder High behandelt wird und wie viel Netzbezug im Low-Modus erlaubt ist.",
+        "title": "3/6 Netz und Prognose",
+        "description": "Verbinde die Live-Netzsensoren, die aktuelle PV-Leistung und die Prognose-Eingänge. Diese Seite ist nur für Messwerte und Prognosequellen da.",
         "data": {
           "grid_import_sensor": "Netzbezug (positiv)",
           "grid_export_sensor": "Netzeinspeisung (positiv)",
-          "grid_import_limit_w": "Netzlimit im Low-Modus",
           "pv_current_power_sensor": "Aktuelle PV-Leistung (optional)",
           "pv_size_kwp": "PV-Anlagengröße (kWp)",
           "inverter_limit_w": "Wechselrichterlimit (optional)",
           "forecast_today_sensor": "Tagesprognose heute (kWh)",
-          "forecast_high_threshold_kwh_per_kwp": "High-Modus ab (kWh/kWp)",
           "forecast_next_hour_sensor": "Prognose nächste Stunde (optional)",
           "forecast_remaining_today_sensor": "Restprognose heute (optional)"
         },
         "data_description": {
-          "grid_import_limit_w": "Maximaler Netzbezug, der im Low-Modus erlaubt ist, bevor der Verbraucher blockiert oder gestoppt wird. Im High-Modus gilt eine deutlich strengere Import-Regel.",
-          "forecast_high_threshold_kwh_per_kwp": "Wenn die Tagesprognose pro kWp diesen Wert erreicht, wird der Tag als High-Modus behandelt.",
           "forecast_next_hour_sensor": "Verbessert kurzfristige Entscheidungen, zum Beispiel Warten oder spätere Neustarts.",
           "forecast_remaining_today_sensor": "Verbessert die Berechnung, wie viel Energie für den Rest des Tages noch erwartet wird."
         }
       },
       "battery": {
-        "title": "4/5 Akku",
+        "title": "4/6 Akku",
         "description": "Akku-Werte sind optional, verbessern aber die Entscheidungen deutlich. Kapazität und SOC helfen abzuschätzen, ob die Restprognose den Akku später noch füllen kann.",
         "data": {
           "battery_soc_sensor": "Akku-Ladestand (optional)",
@@ -58,28 +54,42 @@
           "battery_power_direction": "Vorzeichen der Akku-Leistung",
           "battery_capacity_kwh": "Akku-Kapazität (optional)",
           "battery_mode": "Akku-Modus",
-          "min_battery_soc": "Mindest-Akkustand",
-          "high_mode_base_household_load_w": "High-Grundverbrauch Haushalt",
-          "high_mode_household_reserve_margin_percent": "High-Reserveaufschlag Haushalt"
+          "min_battery_soc": "Mindest-Akkustand"
         },
         "data_description": {
           "battery_power_direction": "Lege fest, wie sich der rohe Akku-Leistungssensor verhält. Intern normiert die Integration den Wert so, dass positiv Laden bedeutet.",
           "battery_mode": "Wähle, ob die Integration den Akku vorsichtiger schützen oder ihn bei Bedarf aktiv verwenden soll.",
-          "min_battery_soc": "Im Modus Akku verwenden vermeidet die Integration erzwungene Akku-Nutzung unterhalb dieser SOC-Grenze.",
-          "high_mode_base_household_load_w": "Wird nur auf High-Tagen verwendet, nachdem die tägliche Mindestlaufzeit bereits erreicht ist. Das ist der erwartete laufende Grundverbrauch des Haushalts, der vor optionaler weiterer Laufzeit aus der Restprognose reserviert werden soll.",
-          "high_mode_household_reserve_margin_percent": "Zusätzlicher Sicherheitsaufschlag auf den Grundverbrauch, um schwankende spätere Haushaltslasten abzufangen."
+          "min_battery_soc": "Im Modus Akku verwenden vermeidet die Integration erzwungene Akku-Nutzung unterhalb dieser SOC-Grenze."
         }
       },
-      "advanced": {
-        "title": "5/5 Diagnose und Fallback",
-        "description": "Aktiviere Debug nur für Fehlersuche. Die Low-Fallback-Option sorgt dafür, dass die Mindestlaufzeit notfalls trotzdem erreicht werden kann, auch wenn das normale Netzlimit den Start blockieren würde.",
+      "modes": {
+        "title": "5/6 Modi",
+        "description": "Hier liegt das Verhalten der Modi. Low und High haben bereits eigene Einstellungen. Mid bekommt später auf dieser Seite seine eigenen Parameter.",
         "data": {
-          "debug_sensor_enabled": "Debug-Sensor und Datei aktivieren",
+          "grid_import_limit_w": "Netzlimit im Low-Modus",
+          "forecast_high_threshold_kwh_per_kwp": "High-Modus ab (kWh/kWp)",
+          "high_mode_base_household_load_w": "High-Grundverbrauch Haushalt",
+          "high_mode_household_reserve_margin_percent": "High-Reserveaufschlag Haushalt",
+          "min_runtime_battery_override": "Low-Mindestlaufzeit darf Akkuschutz übersteuern",
           "min_runtime_grid_override": "Low-Mindestlaufzeit darf Netzlimit übersteuern"
         },
         "data_description": {
-          "debug_sensor_enabled": "Legt den Decision Debug Sensor an und schreibt bei jeder geänderten Entscheidung eine JSONL-Zeile in /config/solar_load_controller_decisions.jsonl. Den genauen Pfad zeigt der Debug-Sensor im Attribut debug_log.path. Aufbewahrung: 7 Tage oder maximal 2000 Einträge.",
+          "grid_import_limit_w": "Maximaler Netzbezug, der im Low-Modus erlaubt ist, bevor der Verbraucher blockiert oder gestoppt wird. Im High-Modus gilt eine deutlich strengere Import-Regel.",
+          "forecast_high_threshold_kwh_per_kwp": "Wenn die Tagesprognose pro kWp diesen Wert erreicht, wird der Tag als High-Modus behandelt. Mid wird später zwischen Low und High liegen.",
+          "high_mode_base_household_load_w": "Wird nur auf High-Tagen verwendet, nachdem die tägliche Mindestlaufzeit bereits erreicht ist. Das ist der erwartete laufende Grundverbrauch des Haushalts, der vor optionaler weiterer Laufzeit aus der Restprognose reserviert werden soll.",
+          "high_mode_household_reserve_margin_percent": "Zusätzlicher Sicherheitsaufschlag auf den Grundverbrauch, um schwankende spätere Haushaltslasten abzufangen.",
+          "min_runtime_battery_override": "Wenn aktiv, darf der Low-Modus den Verbraucher trotzdem starten, um die tägliche Mindestlaufzeit zu erreichen, auch wenn der normale Akkuschutz die erzwungene Laufzeit sonst blockieren würde.",
           "min_runtime_grid_override": "Wenn aktiv, darf der Low-Modus den Verbraucher trotzdem starten, um die tägliche Mindestlaufzeit zu erreichen, auch wenn das normale Low-Netzlimit den Start blockieren würde."
+        }
+      },
+      "advanced": {
+        "title": "6/6 Diagnose",
+        "description": "Aktiviere Debug nur für Fehlersuche.",
+        "data": {
+          "debug_sensor_enabled": "Debug-Sensor und Datei aktivieren"
+        },
+        "data_description": {
+          "debug_sensor_enabled": "Legt den Decision Debug Sensor an und schreibt bei jeder geänderten Entscheidung eine JSONL-Zeile in /config/solar_load_controller_decisions.jsonl. Den genauen Pfad zeigt der Debug-Sensor im Attribut debug_log.path. Aufbewahrung: 7 Tage oder maximal 2000 Einträge."
         }
       }
     }
@@ -87,7 +97,7 @@
   "options": {
     "step": {
       "init": {
-        "title": "Optionen: 1/5 Verbraucher",
+        "title": "Optionen: 1/6 Verbraucher",
         "description": "Passe den gesteuerten Schalter und die typische Leistung des Verbrauchers an.",
         "data": {
           "name": "Name",
@@ -96,7 +106,7 @@
         }
       },
       "runtime": {
-        "title": "Optionen: 2/5 Laufzeit",
+        "title": "Optionen: 2/6 Laufzeit",
         "description": "Passe die garantierte Laufzeit, das Zeitfenster und den Taktschutz an.",
         "data": {
           "min_daily_runtime_minutes": "Mindestlaufzeit pro Tag",
@@ -112,29 +122,25 @@
         }
       },
       "energy": {
-        "title": "Optionen: 3/5 Netz und Prognose",
-        "description": "Passe die Live-Netzsensoren und die Prognose-Eingänge an. Diese Seite steuert die Low/High-Einstufung und den tolerierten Netzbezug im Low-Modus.",
+        "title": "Optionen: 3/6 Netz und Prognose",
+        "description": "Passe die Live-Netzsensoren, die aktuelle PV-Leistung und die Prognose-Eingänge an. Diese Seite ist nur für Messwerte und Prognosequellen da.",
         "data": {
           "grid_import_sensor": "Netzbezug (positiv)",
           "grid_export_sensor": "Netzeinspeisung (positiv)",
-          "grid_import_limit_w": "Netzlimit im Low-Modus",
           "pv_current_power_sensor": "Aktuelle PV-Leistung (optional)",
           "pv_size_kwp": "PV-Anlagengröße (kWp)",
           "inverter_limit_w": "Wechselrichterlimit (optional)",
           "forecast_today_sensor": "Tagesprognose heute (kWh)",
-          "forecast_high_threshold_kwh_per_kwp": "High-Modus ab (kWh/kWp)",
           "forecast_next_hour_sensor": "Prognose nächste Stunde (optional)",
           "forecast_remaining_today_sensor": "Restprognose heute (optional)"
         },
         "data_description": {
-          "grid_import_limit_w": "Maximaler Netzbezug, der im Low-Modus erlaubt ist, bevor der Verbraucher blockiert oder gestoppt wird. Im High-Modus gilt eine deutlich strengere Import-Regel.",
-          "forecast_high_threshold_kwh_per_kwp": "Wenn die Tagesprognose pro kWp diesen Wert erreicht, wird der Tag als High-Modus behandelt.",
           "forecast_next_hour_sensor": "Verbessert kurzfristige Entscheidungen, zum Beispiel Warten oder spätere Neustarts.",
           "forecast_remaining_today_sensor": "Verbessert die Berechnung, wie viel Energie für den Rest des Tages noch erwartet wird."
         }
       },
       "battery": {
-        "title": "Optionen: 4/5 Akku",
+        "title": "Optionen: 4/6 Akku",
         "description": "Passe optionale Akku-Eingänge und Grenzwerte an. Diese Werte helfen der Logik zu entscheiden, ob die Restprognose zuerst in den Akku gehen sollte.",
         "data": {
           "battery_soc_sensor": "Akku-Ladestand (optional)",
@@ -142,28 +148,42 @@
           "battery_power_direction": "Vorzeichen der Akku-Leistung",
           "battery_capacity_kwh": "Akku-Kapazität (optional)",
           "battery_mode": "Akku-Modus",
-          "min_battery_soc": "Mindest-Akkustand",
-          "high_mode_base_household_load_w": "High-Grundverbrauch Haushalt",
-          "high_mode_household_reserve_margin_percent": "High-Reserveaufschlag Haushalt"
+          "min_battery_soc": "Mindest-Akkustand"
         },
         "data_description": {
           "battery_power_direction": "Lege fest, wie sich der rohe Akku-Leistungssensor verhält. Intern normiert die Integration den Wert so, dass positiv Laden bedeutet.",
           "battery_mode": "Wähle, ob die Integration den Akku vorsichtiger schützen oder ihn bei Bedarf aktiv verwenden soll.",
-          "min_battery_soc": "Im Modus Akku verwenden vermeidet die Integration erzwungene Akku-Nutzung unterhalb dieser SOC-Grenze.",
-          "high_mode_base_household_load_w": "Wird nur auf High-Tagen verwendet, nachdem die tägliche Mindestlaufzeit bereits erreicht ist. Das ist der erwartete laufende Grundverbrauch des Haushalts, der vor optionaler weiterer Laufzeit aus der Restprognose reserviert werden soll.",
-          "high_mode_household_reserve_margin_percent": "Zusätzlicher Sicherheitsaufschlag auf den Grundverbrauch, um schwankende spätere Haushaltslasten abzufangen."
+          "min_battery_soc": "Im Modus Akku verwenden vermeidet die Integration erzwungene Akku-Nutzung unterhalb dieser SOC-Grenze."
         }
       },
-      "advanced": {
-        "title": "Optionen: 5/5 Diagnose und Fallback",
-        "description": "Passe Debug-Ausgabe und das Low-Fallback-Verhalten an, das die Mindestlaufzeit garantiert.",
+      "modes": {
+        "title": "Optionen: 5/6 Modi",
+        "description": "Hier liegt das Verhalten der Modi. Low und High haben bereits eigene Einstellungen. Mid bekommt später auf dieser Seite seine eigenen Parameter.",
         "data": {
-          "debug_sensor_enabled": "Debug-Sensor und Datei aktivieren",
+          "grid_import_limit_w": "Netzlimit im Low-Modus",
+          "forecast_high_threshold_kwh_per_kwp": "High-Modus ab (kWh/kWp)",
+          "high_mode_base_household_load_w": "High-Grundverbrauch Haushalt",
+          "high_mode_household_reserve_margin_percent": "High-Reserveaufschlag Haushalt",
+          "min_runtime_battery_override": "Low-Mindestlaufzeit darf Akkuschutz übersteuern",
           "min_runtime_grid_override": "Low-Mindestlaufzeit darf Netzlimit übersteuern"
         },
         "data_description": {
-          "debug_sensor_enabled": "Legt den Decision Debug Sensor an und schreibt bei jeder geänderten Entscheidung eine JSONL-Zeile in /config/solar_load_controller_decisions.jsonl. Den genauen Pfad zeigt der Debug-Sensor im Attribut debug_log.path. Aufbewahrung: 7 Tage oder maximal 2000 Einträge.",
+          "grid_import_limit_w": "Maximaler Netzbezug, der im Low-Modus erlaubt ist, bevor der Verbraucher blockiert oder gestoppt wird. Im High-Modus gilt eine deutlich strengere Import-Regel.",
+          "forecast_high_threshold_kwh_per_kwp": "Wenn die Tagesprognose pro kWp diesen Wert erreicht, wird der Tag als High-Modus behandelt. Mid wird später zwischen Low und High liegen.",
+          "high_mode_base_household_load_w": "Wird nur auf High-Tagen verwendet, nachdem die tägliche Mindestlaufzeit bereits erreicht ist. Das ist der erwartete laufende Grundverbrauch des Haushalts, der vor optionaler weiterer Laufzeit aus der Restprognose reserviert werden soll.",
+          "high_mode_household_reserve_margin_percent": "Zusätzlicher Sicherheitsaufschlag auf den Grundverbrauch, um schwankende spätere Haushaltslasten abzufangen.",
+          "min_runtime_battery_override": "Wenn aktiv, darf der Low-Modus den Verbraucher trotzdem starten, um die tägliche Mindestlaufzeit zu erreichen, auch wenn der normale Akkuschutz die erzwungene Laufzeit sonst blockieren würde.",
           "min_runtime_grid_override": "Wenn aktiv, darf der Low-Modus den Verbraucher trotzdem starten, um die tägliche Mindestlaufzeit zu erreichen, auch wenn das normale Low-Netzlimit den Start blockieren würde."
+        }
+      },
+      "advanced": {
+        "title": "Optionen: 6/6 Diagnose",
+        "description": "Passe die Debug-Ausgabe für die Fehlersuche an.",
+        "data": {
+          "debug_sensor_enabled": "Debug-Sensor und Datei aktivieren"
+        },
+        "data_description": {
+          "debug_sensor_enabled": "Legt den Decision Debug Sensor an und schreibt bei jeder geänderten Entscheidung eine JSONL-Zeile in /config/solar_load_controller_decisions.jsonl. Den genauen Pfad zeigt der Debug-Sensor im Attribut debug_log.path. Aufbewahrung: 7 Tage oder maximal 2000 Einträge."
         }
       }
     }
@@ -201,6 +221,8 @@
           "export_guard": "Export Schutz",
           "forecast_run": "Prognose Lauf",
           "forecast": "Prognose Warten",
+          "low_assist": "Low Assist",
+          "low_wait": "Low Warten",
           "grid_import": "Netzlimit",
           "battery": "Akku Schutz",
           "battery_priority": "Akku Priorität",

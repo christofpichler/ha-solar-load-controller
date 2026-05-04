@@ -44,6 +44,7 @@ from .const import (
     CONF_LOAD_SWITCH,
     CONF_MIN_BATTERY_SOC,
     CONF_MIN_DAILY_RUNTIME_MINUTES,
+    CONF_MIN_RUNTIME_BATTERY_OVERRIDE,
     CONF_MIN_RUNTIME_GRID_OVERRIDE,
     CONF_MIN_OFF_MINUTES,
     CONF_MIN_ON_MINUTES,
@@ -53,6 +54,7 @@ from .const import (
     DECISION_EXPORT_GUARD,
     DECISION_FORECAST_ASSISTED_RUN,
     DECISION_GRID_IMPORT_LIMIT_EXCEEDED,
+    DECISION_LOW_FORECAST_ASSISTED_RUN,
     DECISION_MINIMUM_RUNTIME_REQUIRED,
     DECISION_SOLAR_SURPLUS_AVAILABLE,
     DEFAULT_BATTERY_POWER_DIRECTION,
@@ -79,6 +81,15 @@ from .energy import (
     usable_battery_charge_for_ac_surplus,
 )
 from .high_mode import allow_post_runtime_export_guard_restart
+from .low_mode import (
+    assisted_run_surplus_threshold_w as low_mode_assisted_surplus_threshold_w,
+    should_allow_assisted_run as should_allow_low_mode_assisted_run,
+    forecast_wait_threshold_kwh as low_mode_forecast_wait_threshold_kwh,
+    runtime_pressure as low_mode_runtime_pressure,
+    runtime_wait_buffer_minutes as low_mode_runtime_wait_buffer_minutes,
+    should_wait_for_forecast as should_wait_for_low_mode_forecast,
+    should_force_runtime as should_force_low_mode_runtime,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -95,7 +106,13 @@ HIGH_FORECAST_POST_RUNTIME_NEXT_HOUR_RATIO = 1.5
 HIGH_FORECAST_POST_RUNTIME_PRIORITY_BUFFER_MIN_HOURS = 2.0
 HIGH_FORECAST_POST_RUNTIME_PRIORITY_BUFFER_MAX_HOURS = 8.0
 HIGH_FORECAST_POST_RUNTIME_PRIORITY_BUFFER_EXPONENT = 1.6
-LOW_FORECAST_RUNTIME_DEADLINE_RATIO = 0.5
+LOW_FORECAST_RUNTIME_BUFFER_MIN_RATIO = 0.15
+LOW_FORECAST_RUNTIME_BUFFER_MAX_RATIO = 0.75
+LOW_FORECAST_RUNTIME_BUFFER_EXPONENT = 1.6
+LOW_FORECAST_WAIT_THRESHOLD_MIN_MULTIPLIER = 1.0
+LOW_FORECAST_WAIT_THRESHOLD_MAX_MULTIPLIER = 1.75
+LOW_FORECAST_ASSISTED_SURPLUS_EARLY_RATIO = 0.85
+LOW_FORECAST_ASSISTED_SURPLUS_LATE_RATIO = 0.35
 PENDING_LOAD_STATE_TIMEOUT = timedelta(seconds=30)
 DEBUG_DECISION_LOG_FILENAME = "solar_load_controller_decisions.jsonl"
 DEBUG_DECISION_LOG_RETENTION_DAYS = 7
@@ -399,6 +416,76 @@ class SolarLoadController:
         )
 
     @property
+    def low_mode_runtime_progress(self) -> float:
+        """Return low-mode day progress inside the active time window."""
+        total_window_minutes = self._total_window_minutes
+        if total_window_minutes <= 0:
+            return 0.0
+        elapsed_window_minutes = max(
+            0.0,
+            min(total_window_minutes, total_window_minutes - self.minutes_until_finish),
+        )
+        return round(elapsed_window_minutes / total_window_minutes, 3)
+
+    @property
+    def low_mode_runtime_pressure(self) -> float:
+        """Return how strongly low mode should already prioritize runtime."""
+        return round(
+            low_mode_runtime_pressure(
+                self.low_mode_runtime_progress,
+                exponent=LOW_FORECAST_RUNTIME_BUFFER_EXPONENT,
+            ),
+            3,
+        )
+
+    @property
+    def low_mode_runtime_slack_minutes(self) -> float:
+        """Return remaining free slack between finish time and runtime target."""
+        return round(
+            max(
+                0.0,
+                self.minutes_until_finish - self.runtime_remaining_today_minutes,
+            ),
+            1,
+        )
+
+    @property
+    def low_mode_runtime_wait_buffer_minutes(self) -> float:
+        """Return low-mode slack still tolerated before forcing runtime."""
+        min_daily_runtime_minutes = _as_float(
+            self.config.get(CONF_MIN_DAILY_RUNTIME_MINUTES),
+            DEFAULT_MIN_DAILY_RUNTIME_MINUTES,
+        )
+        return low_mode_runtime_wait_buffer_minutes(
+            min_daily_runtime_minutes,
+            self.low_mode_runtime_progress,
+            min_ratio=LOW_FORECAST_RUNTIME_BUFFER_MIN_RATIO,
+            max_ratio=LOW_FORECAST_RUNTIME_BUFFER_MAX_RATIO,
+            exponent=LOW_FORECAST_RUNTIME_BUFFER_EXPONENT,
+        )
+
+    @property
+    def low_mode_forecast_wait_threshold_kwh(self) -> float:
+        """Return the next-hour forecast needed to justify waiting in low mode."""
+        return low_mode_forecast_wait_threshold_kwh(
+            self.load_power_w,
+            DEFAULT_FORECAST_WAIT_MINUTES,
+            self.low_mode_runtime_pressure,
+            min_multiplier=LOW_FORECAST_WAIT_THRESHOLD_MIN_MULTIPLIER,
+            max_multiplier=LOW_FORECAST_WAIT_THRESHOLD_MAX_MULTIPLIER,
+        )
+
+    @property
+    def low_mode_assisted_surplus_threshold_w(self) -> float:
+        """Return the current solar contribution needed for low assisted starts."""
+        return low_mode_assisted_surplus_threshold_w(
+            self.load_power_w,
+            self.low_mode_runtime_pressure,
+            early_ratio=LOW_FORECAST_ASSISTED_SURPLUS_EARLY_RATIO,
+            late_ratio=LOW_FORECAST_ASSISTED_SURPLUS_LATE_RATIO,
+        )
+
+    @property
     def grid_import_limit_w(self) -> float:
         """Return configured allowed grid import in watts."""
         return _as_float(
@@ -495,6 +582,16 @@ class SolarLoadController:
     def min_runtime_grid_override(self) -> bool:
         """Return whether guaranteed runtime may exceed grid import limits."""
         return bool(self.config.get(CONF_MIN_RUNTIME_GRID_OVERRIDE, True))
+
+    @property
+    def min_runtime_battery_override(self) -> bool:
+        """Return whether guaranteed runtime may exceed battery protection."""
+        return bool(
+            self.config.get(
+                CONF_MIN_RUNTIME_BATTERY_OVERRIDE,
+                self.min_runtime_grid_override,
+            )
+        )
 
     @property
     def runtime_remaining_today_minutes(self) -> float:
@@ -793,6 +890,18 @@ class SolarLoadController:
             runtime_remaining_minutes=runtime_remaining,
             required_remaining_energy_kwh=self.required_remaining_energy_kwh,
             minutes_until_finish=self.minutes_until_finish,
+            low_mode_runtime_progress=self.low_mode_runtime_progress,
+            low_mode_runtime_pressure=self.low_mode_runtime_pressure,
+            low_mode_runtime_slack_minutes=self.low_mode_runtime_slack_minutes,
+            low_mode_runtime_wait_buffer_minutes=(
+                self.low_mode_runtime_wait_buffer_minutes
+            ),
+            low_mode_forecast_wait_threshold_kwh=(
+                self.low_mode_forecast_wait_threshold_kwh
+            ),
+            low_mode_assisted_surplus_threshold_w=(
+                self.low_mode_assisted_surplus_threshold_w
+            ),
             min_on_active=self.min_on_active,
             min_on_remaining_minutes=self.min_on_remaining_minutes,
             min_off_active=self.min_off_active,
@@ -831,6 +940,7 @@ class SolarLoadController:
             must_force_minimum_runtime=self._must_force_minimum_runtime(
                 runtime_remaining
             ),
+            min_runtime_battery_override=self.min_runtime_battery_override,
             min_runtime_grid_override=self.min_runtime_grid_override,
             projected_grid_import_exceeds_limit=(
                 self._projected_grid_import_exceeds_limit
@@ -871,6 +981,7 @@ class SolarLoadController:
         new_state = event.data.get("new_state")
         old_is_on = old_state is not None and old_state.state == STATE_ON
         new_is_on = new_state is not None and new_state.state == STATE_ON
+        change_source = self._load_change_source(new_is_on)
 
         if not old_is_on and new_is_on:
             now = dt_util.utcnow()
@@ -892,6 +1003,8 @@ class SolarLoadController:
 
         self._async_clear_pending_load_state(new_is_on)
         self._async_update_grid_import_tracking()
+        if old_is_on != new_is_on and change_source == "manual":
+            self._async_log_manual_load_change(new_is_on)
         self._async_notify_listeners()
         self.hass.async_create_task(self._async_apply_decision())
 
@@ -1000,6 +1113,24 @@ class SolarLoadController:
         record = self._decision_log_record(decision)
         self.hass.async_create_task(self._async_write_decision_log(record))
 
+    @callback
+    def _async_log_manual_load_change(self, is_on: bool) -> None:
+        """Write an explicit debug record for a manual load state change."""
+        if not self.config.get(CONF_DEBUG_SENSOR_ENABLED):
+            return
+
+        action = "turn_on" if is_on else "turn_off"
+        decision = self.decision
+        record = self._decision_log_record(
+            decision,
+            event={
+                "type": "load_change",
+                "source": "manual",
+                "action": action,
+            },
+        )
+        self.hass.async_create_task(self._async_write_decision_log(record))
+
     async def _async_write_decision_log(self, record: dict[str, Any]) -> None:
         """Write one debug decision record in the executor."""
         path = self.hass.config.path(DEBUG_DECISION_LOG_FILENAME)
@@ -1012,7 +1143,12 @@ class SolarLoadController:
         except OSError as err:
             _LOGGER.warning("Could not write decision debug log: %s", err)
 
-    def _decision_log_record(self, decision: DecisionResult) -> dict[str, Any]:
+    def _decision_log_record(
+        self,
+        decision: DecisionResult,
+        *,
+        event: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Return one JSON-serializable decision log record."""
         now_local = dt_util.now()
         now_utc = dt_util.utcnow()
@@ -1021,6 +1157,7 @@ class SolarLoadController:
             "timestamp_utc": now_utc.isoformat(),
             "timestamp_epoch": now_utc.timestamp(),
             "schema": 1,
+            "event": event or {"type": "decision_change"},
             "entry": {
                 "entry_id": self.entry.entry_id,
                 "title": self.entry.title,
@@ -1059,18 +1196,47 @@ class SolarLoadController:
                 "high_forecast_post_runtime_priority_buffer_exponent": (
                     HIGH_FORECAST_POST_RUNTIME_PRIORITY_BUFFER_EXPONENT
                 ),
+                "low_forecast_runtime_buffer_min_ratio": (
+                    LOW_FORECAST_RUNTIME_BUFFER_MIN_RATIO
+                ),
+                "low_forecast_runtime_buffer_max_ratio": (
+                    LOW_FORECAST_RUNTIME_BUFFER_MAX_RATIO
+                ),
+                "low_forecast_runtime_buffer_exponent": (
+                    LOW_FORECAST_RUNTIME_BUFFER_EXPONENT
+                ),
+                "low_forecast_wait_threshold_min_multiplier": (
+                    LOW_FORECAST_WAIT_THRESHOLD_MIN_MULTIPLIER
+                ),
+                "low_forecast_wait_threshold_max_multiplier": (
+                    LOW_FORECAST_WAIT_THRESHOLD_MAX_MULTIPLIER
+                ),
+                "low_forecast_assisted_surplus_early_ratio": (
+                    LOW_FORECAST_ASSISTED_SURPLUS_EARLY_RATIO
+                ),
+                "low_forecast_assisted_surplus_late_ratio": (
+                    LOW_FORECAST_ASSISTED_SURPLUS_LATE_RATIO
+                ),
                 "high_mode_base_household_load_w": (
                     self.high_mode_base_household_load_w
                 ),
                 "high_mode_household_reserve_margin_percent": (
                     self.high_mode_household_reserve_margin_percent
                 ),
+                "min_runtime_battery_override": self.min_runtime_battery_override,
                 "min_runtime_grid_override": self.min_runtime_grid_override,
                 "forecast_day_mode_override": self.forecast_day_mode_override,
             },
             "states": self._debug_input_states(),
             "decision": decision.as_debug_dict(),
         }
+
+    @callback
+    def _load_change_source(self, current_state: bool) -> str:
+        """Return whether the current load state change is automatic or manual."""
+        if self._pending_load_state_matches(current_state):
+            return "automatic"
+        return "manual"
 
     def _debug_input_states(self) -> dict[str, dict[str, Any]]:
         """Return the raw HA state for configured input entities."""
@@ -1179,6 +1345,7 @@ class SolarLoadController:
         if self._active_runtime_reason not in {
             DECISION_SOLAR_SURPLUS_AVAILABLE,
             DECISION_FORECAST_ASSISTED_RUN,
+            DECISION_LOW_FORECAST_ASSISTED_RUN,
             DECISION_EXPORT_GUARD,
         }:
             return self._solar_runtime_seconds
@@ -1210,6 +1377,7 @@ class SolarLoadController:
         if reason in {
             DECISION_SOLAR_SURPLUS_AVAILABLE,
             DECISION_FORECAST_ASSISTED_RUN,
+            DECISION_LOW_FORECAST_ASSISTED_RUN,
             DECISION_EXPORT_GUARD,
         }:
             self._solar_runtime_seconds += delta_seconds
@@ -1228,6 +1396,7 @@ class SolarLoadController:
         if reason in {
             DECISION_SOLAR_SURPLUS_AVAILABLE,
             DECISION_FORECAST_ASSISTED_RUN,
+            DECISION_LOW_FORECAST_ASSISTED_RUN,
             DECISION_EXPORT_GUARD,
             DECISION_MINIMUM_RUNTIME_REQUIRED,
         }:
@@ -1241,11 +1410,20 @@ class SolarLoadController:
         if self._forecast_is_insufficient_for_remaining_runtime:
             return True
 
-        minutes_until_finish = self._minutes_until_finish
         if (
             self.forecast_day_class == FORECAST_DAY_MODE_LOW
-            and runtime_remaining_minutes
-            >= minutes_until_finish * LOW_FORECAST_RUNTIME_DEADLINE_RATIO
+            and should_force_low_mode_runtime(
+                runtime_remaining_minutes,
+                self._minutes_until_finish,
+                _as_float(
+                    self.config.get(CONF_MIN_DAILY_RUNTIME_MINUTES),
+                    DEFAULT_MIN_DAILY_RUNTIME_MINUTES,
+                ),
+                self.low_mode_runtime_progress,
+                min_ratio=LOW_FORECAST_RUNTIME_BUFFER_MIN_RATIO,
+                max_ratio=LOW_FORECAST_RUNTIME_BUFFER_MAX_RATIO,
+                exponent=LOW_FORECAST_RUNTIME_BUFFER_EXPONENT,
+            )
         ):
             return True
 
@@ -1444,7 +1622,26 @@ class SolarLoadController:
     @property
     def _forecast_assisted_run_available(self) -> bool:
         """Return whether future mid-day forecast assistance may run the load."""
-        return False
+        if self.forecast_day_class != FORECAST_DAY_MODE_LOW:
+            return False
+
+        runtime_remaining_minutes = self.runtime_remaining_today_minutes
+        if runtime_remaining_minutes <= 0:
+            return False
+        if self._must_force_minimum_runtime(runtime_remaining_minutes):
+            return False
+        if self.available_surplus_w >= self.load_power_w:
+            return False
+
+        effective_start_surplus_w = self.available_surplus_w + self.usable_battery_charge_w
+        return should_allow_low_mode_assisted_run(
+            effective_solar_surplus_w=effective_start_surplus_w,
+            projected_grid_import_exceeds_limit=self._projected_grid_import_exceeds_limit,
+            battery_power_state=self.battery_power_state,
+            forecast_next_hour_kwh=self._forecast_next_hour_kwh,
+            forecast_wait_threshold_kwh=self.low_mode_forecast_wait_threshold_kwh,
+            required_surplus_w=self.low_mode_assisted_surplus_threshold_w,
+        )
 
     @property
     def _export_guard_run_available(self) -> bool:
@@ -1592,6 +1789,19 @@ class SolarLoadController:
             return False
         if self._forecast_is_insufficient_for_remaining_runtime:
             return False
+
+        if self.forecast_day_class == FORECAST_DAY_MODE_LOW:
+            return should_wait_for_low_mode_forecast(
+                forecast_remaining_kwh=self._forecast_remaining_kwh,
+                forecast_next_hour_kwh=self._forecast_next_hour_kwh,
+                slack_minutes=self.low_mode_runtime_slack_minutes,
+                wait_buffer_minutes=self.low_mode_runtime_wait_buffer_minutes,
+                load_power_w=self.load_power_w,
+                wait_minutes=DEFAULT_FORECAST_WAIT_MINUTES,
+                pressure=self.low_mode_runtime_pressure,
+                min_multiplier=LOW_FORECAST_WAIT_THRESHOLD_MIN_MULTIPLIER,
+                max_multiplier=LOW_FORECAST_WAIT_THRESHOLD_MAX_MULTIPLIER,
+            )
 
         next_hour_kwh = self._forecast_next_hour_kwh
         if next_hour_kwh is None:

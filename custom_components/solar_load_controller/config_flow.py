@@ -39,6 +39,7 @@ from .const import (
     CONF_LOAD_SWITCH,
     CONF_MIN_BATTERY_SOC,
     CONF_MIN_DAILY_RUNTIME_MINUTES,
+    CONF_MIN_RUNTIME_BATTERY_OVERRIDE,
     CONF_MIN_RUNTIME_GRID_OVERRIDE,
     CONF_MIN_OFF_MINUTES,
     CONF_MIN_ON_MINUTES,
@@ -123,11 +124,26 @@ class SolarLoadControllerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             user_input = _normalize_flow_input(user_input)
             self._config_data.update(user_input)
-            return await self.async_step_advanced()
+            return await self.async_step_modes()
 
         return self.async_show_form(
             step_id="battery",
             data_schema=vol.Schema(_battery_schema({})),
+        )
+
+    async def async_step_modes(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> FlowResult:
+        """Handle Low/High mode behavior settings."""
+        if user_input is not None:
+            user_input = _normalize_flow_input(user_input)
+            self._config_data.update(user_input)
+            return await self.async_step_advanced()
+
+        return self.async_show_form(
+            step_id="modes",
+            data_schema=vol.Schema(_mode_schema({})),
         )
 
     async def async_step_advanced(
@@ -232,7 +248,7 @@ class SolarLoadControllerOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             user_input = _normalize_flow_input(user_input)
             self._options_data.update(user_input)
-            return await self.async_step_advanced()
+            return await self.async_step_modes()
 
         merged = _merged_flow_defaults(
             self._config_entry.data,
@@ -242,6 +258,26 @@ class SolarLoadControllerOptionsFlow(config_entries.OptionsFlow):
         return self.async_show_form(
             step_id="battery",
             data_schema=vol.Schema(_battery_schema(merged)),
+        )
+
+    async def async_step_modes(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> FlowResult:
+        """Manage mode behavior options."""
+        if user_input is not None:
+            user_input = _normalize_flow_input(user_input)
+            self._options_data.update(user_input)
+            return await self.async_step_advanced()
+
+        merged = _merged_flow_defaults(
+            self._config_entry.data,
+            self._config_entry.options,
+            self._options_data,
+        )
+        return self.async_show_form(
+            step_id="modes",
+            data_schema=vol.Schema(_mode_schema(merged)),
         )
 
     async def async_step_advanced(
@@ -354,21 +390,6 @@ def _grid_schema(defaults: dict[str, Any]) -> dict[Any, Any]:
     return {
         _required(CONF_GRID_IMPORT_SENSOR, defaults): _measurement_entity_selector(),
         _required(CONF_GRID_EXPORT_SENSOR, defaults): _measurement_entity_selector(),
-        vol.Required(
-            CONF_GRID_IMPORT_LIMIT_W,
-            default=defaults.get(
-                CONF_GRID_IMPORT_LIMIT_W,
-                DEFAULT_GRID_IMPORT_LIMIT_W,
-            ),
-        ): selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=0,
-                max=10000,
-                step=1,
-                unit_of_measurement="W",
-                mode=selector.NumberSelectorMode.BOX,
-            )
-        ),
     }
 
 
@@ -403,21 +424,6 @@ def _pv_schema(defaults: dict[str, Any]) -> dict[Any, Any]:
             )
         ),
         _required(CONF_FORECAST_TODAY_SENSOR, defaults): _measurement_entity_selector(),
-        vol.Required(
-            CONF_FORECAST_HIGH_THRESHOLD_KWH_PER_KWP,
-            default=defaults.get(
-                CONF_FORECAST_HIGH_THRESHOLD_KWH_PER_KWP,
-                DEFAULT_FORECAST_HIGH_THRESHOLD_KWH_PER_KWP,
-            ),
-        ): selector.NumberSelector(
-            selector.NumberSelectorConfig(
-                min=0,
-                max=20,
-                step=0.1,
-                unit_of_measurement="kWh/kWp",
-                mode=selector.NumberSelectorMode.BOX,
-            )
-        ),
         _optional(CONF_FORECAST_NEXT_HOUR_SENSOR, defaults): _measurement_entity_selector(),
         _optional(
             CONF_FORECAST_REMAINING_TODAY_SENSOR,
@@ -481,6 +487,42 @@ def _battery_schema(defaults: dict[str, Any]) -> dict[Any, Any]:
                 mode=selector.NumberSelectorMode.SLIDER,
             )
         ),
+    }
+
+
+def _mode_schema(defaults: dict[str, Any]) -> dict[Any, Any]:
+    """Return mode behavior settings schema."""
+    return {
+        vol.Required(
+            CONF_GRID_IMPORT_LIMIT_W,
+            default=defaults.get(
+                CONF_GRID_IMPORT_LIMIT_W,
+                DEFAULT_GRID_IMPORT_LIMIT_W,
+            ),
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=10000,
+                step=1,
+                unit_of_measurement="W",
+                mode=selector.NumberSelectorMode.BOX,
+            )
+        ),
+        vol.Required(
+            CONF_FORECAST_HIGH_THRESHOLD_KWH_PER_KWP,
+            default=defaults.get(
+                CONF_FORECAST_HIGH_THRESHOLD_KWH_PER_KWP,
+                DEFAULT_FORECAST_HIGH_THRESHOLD_KWH_PER_KWP,
+            ),
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=20,
+                step=0.1,
+                unit_of_measurement="kWh/kWp",
+                mode=selector.NumberSelectorMode.BOX,
+            )
+        ),
         vol.Required(
             CONF_HIGH_MODE_BASE_HOUSEHOLD_LOAD_W,
             default=defaults.get(
@@ -511,6 +553,17 @@ def _battery_schema(defaults: dict[str, Any]) -> dict[Any, Any]:
                 mode=selector.NumberSelectorMode.SLIDER,
             )
         ),
+        vol.Required(
+            CONF_MIN_RUNTIME_BATTERY_OVERRIDE,
+            default=defaults.get(
+                CONF_MIN_RUNTIME_BATTERY_OVERRIDE,
+                defaults.get(CONF_MIN_RUNTIME_GRID_OVERRIDE, True),
+            ),
+        ): selector.BooleanSelector(),
+        vol.Required(
+            CONF_MIN_RUNTIME_GRID_OVERRIDE,
+            default=defaults.get(CONF_MIN_RUNTIME_GRID_OVERRIDE, True),
+        ): selector.BooleanSelector(),
     }
 
 
@@ -521,11 +574,8 @@ def _control_schema(defaults: dict[str, Any]) -> dict[Any, Any]:
             CONF_DEBUG_SENSOR_ENABLED,
             default=defaults.get(CONF_DEBUG_SENSOR_ENABLED, False),
         ): selector.BooleanSelector(),
-        vol.Required(
-            CONF_MIN_RUNTIME_GRID_OVERRIDE,
-            default=defaults.get(CONF_MIN_RUNTIME_GRID_OVERRIDE, True),
-        ): selector.BooleanSelector(),
     }
+
 
 def _advanced_schema(defaults: dict[str, Any]) -> dict[Any, Any]:
     """Return diagnostics and fallback settings schema."""

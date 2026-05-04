@@ -24,10 +24,13 @@ solar_load_controller.__path__ = [str(PACKAGE_DIR)]
 setattr(custom_components, "solar_load_controller", solar_load_controller)
 
 from custom_components.solar_load_controller.const import (
+    DECISION_BATTERY_PROTECTED,
     DECISION_BATTERY_PRIORITY,
     DECISION_EXPORT_GUARD,
     DECISION_FORECAST_WAIT,
     DECISION_GRID_IMPORT_LIMIT_EXCEEDED,
+    DECISION_LOW_FORECAST_ASSISTED_RUN,
+    DECISION_LOW_FORECAST_WAIT,
     DECISION_MINIMUM_OFF_TIME_ACTIVE,
     DECISION_MINIMUM_ON_TIME_ACTIVE,
     DECISION_MINIMUM_RUNTIME_REACHED,
@@ -65,6 +68,12 @@ def make_inputs(**overrides: object) -> DecisionInputs:
         runtime_remaining_minutes=180.0,
         required_remaining_energy_kwh=1.35,
         minutes_until_finish=360.0,
+        low_mode_runtime_progress=0.0,
+        low_mode_runtime_pressure=0.0,
+        low_mode_runtime_slack_minutes=180.0,
+        low_mode_runtime_wait_buffer_minutes=27.0,
+        low_mode_forecast_wait_threshold_kwh=0.45,
+        low_mode_assisted_surplus_threshold_w=382.5,
         min_on_active=False,
         min_on_remaining_minutes=0.0,
         min_off_active=False,
@@ -83,6 +92,7 @@ def make_inputs(**overrides: object) -> DecisionInputs:
         high_forecast_grid_import_duration_seconds=0.0,
         high_forecast_grid_import_shutdown_delay_seconds=15.0,
         must_force_minimum_runtime=False,
+        min_runtime_battery_override=True,
         min_runtime_grid_override=True,
         projected_grid_import_exceeds_limit=False,
         battery_can_support_forced_runtime=True,
@@ -115,7 +125,19 @@ class DecisionEngineTest(unittest.TestCase):
         result = evaluate_decision(make_inputs(should_wait_for_forecast=True))
 
         self.assertFalse(result.should_run)
-        self.assertEqual(result.reason, DECISION_FORECAST_WAIT)
+        self.assertEqual(result.reason, DECISION_LOW_FORECAST_WAIT)
+
+    def test_forecast_assisted_run_uses_low_assist_reason(self) -> None:
+        """Controlled low-mode assisted starts should use the low_assist reason."""
+        result = evaluate_decision(
+            make_inputs(
+                forecast_assisted_run_available=True,
+                should_wait_for_forecast=True,
+            )
+        )
+
+        self.assertTrue(result.should_run)
+        self.assertEqual(result.reason, DECISION_LOW_FORECAST_ASSISTED_RUN)
 
     def test_export_guard_runs_before_runtime_is_due(self) -> None:
         """High forecast export guard should start the load early."""
@@ -237,6 +259,39 @@ class DecisionEngineTest(unittest.TestCase):
         self.assertEqual(
             result.summary,
             "runtime_force: minimum runtime overrides grid limit",
+        )
+
+    def test_battery_protection_blocks_forced_runtime_without_battery_override(self) -> None:
+        """Battery protection should still block forced runtime when its override is disabled."""
+        result = evaluate_decision(
+            make_inputs(
+                must_force_minimum_runtime=True,
+                battery_can_support_forced_runtime=False,
+                min_runtime_battery_override=False,
+                min_runtime_grid_override=True,
+            )
+        )
+
+        self.assertFalse(result.should_run)
+        self.assertEqual(result.reason, DECISION_BATTERY_PROTECTED)
+
+    def test_minimum_runtime_may_override_battery_protection_separately(self) -> None:
+        """Battery override should allow forced runtime without needing grid override changes."""
+        result = evaluate_decision(
+            make_inputs(
+                must_force_minimum_runtime=True,
+                battery_can_support_forced_runtime=False,
+                min_runtime_battery_override=True,
+                min_runtime_grid_override=False,
+                projected_grid_import_exceeds_limit=False,
+            )
+        )
+
+        self.assertTrue(result.should_run)
+        self.assertEqual(result.reason, DECISION_MINIMUM_RUNTIME_REQUIRED)
+        self.assertEqual(
+            result.summary,
+            "runtime_force: minimum runtime overrides battery protection",
         )
 
     def test_minimum_runtime_overrides_min_off(self) -> None:
