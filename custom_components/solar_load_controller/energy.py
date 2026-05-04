@@ -46,3 +46,25 @@ def household_energy_reserve_kwh(
         1 + max(0.0, reserve_margin_percent) / 100
     )
     return round(effective_household_load_w * remaining_hours / 1000, 3)
+
+
+def time_priority_buffer_kwh(
+    base_household_load_w: float,
+    reserve_margin_percent: float,
+    progress: float,
+    *,
+    min_hours: float,
+    max_hours: float,
+    exponent: float,
+) -> float:
+    """Return a late-day battery-priority buffer scaled by household load."""
+    if base_household_load_w <= 0 or max_hours <= 0:
+        return 0.0
+
+    clamped_progress = min(1.0, max(0.0, progress))
+    shaped_progress = clamped_progress**exponent
+    effective_household_load_w = base_household_load_w * (
+        1 + max(0.0, reserve_margin_percent) / 100
+    )
+    buffer_hours = min_hours + shaped_progress * max(0.0, max_hours - min_hours)
+    return round(effective_household_load_w * buffer_hours / 1000, 3)

@@ -75,6 +75,7 @@ from .decision_engine import DecisionInputs, DecisionResult, evaluate_decision
 from .energy import (
     household_energy_reserve_kwh,
     required_input_energy,
+    time_priority_buffer_kwh,
     usable_battery_charge_for_ac_surplus,
 )
 from .high_mode import allow_post_runtime_export_guard_restart
@@ -91,7 +92,9 @@ HIGH_FORECAST_POST_RUNTIME_BATTERY_TARGET_SOC = 99
 HIGH_FORECAST_POST_RUNTIME_BATTERY_HEADROOM_KWH = 0.05
 HIGH_FORECAST_POST_RUNTIME_RESTART_SURPLUS_MARGIN_W = 75
 HIGH_FORECAST_POST_RUNTIME_NEXT_HOUR_RATIO = 1.5
-HIGH_FORECAST_POST_RUNTIME_PRIORITY_BUFFER_KWH = 1.0
+HIGH_FORECAST_POST_RUNTIME_PRIORITY_BUFFER_MIN_HOURS = 2.0
+HIGH_FORECAST_POST_RUNTIME_PRIORITY_BUFFER_MAX_HOURS = 8.0
+HIGH_FORECAST_POST_RUNTIME_PRIORITY_BUFFER_EXPONENT = 1.6
 LOW_FORECAST_RUNTIME_DEADLINE_RATIO = 0.5
 PENDING_LOAD_STATE_TIMEOUT = timedelta(seconds=30)
 DEBUG_DECISION_LOG_FILENAME = "solar_load_controller_decisions.jsonl"
@@ -371,6 +374,28 @@ class SolarLoadController:
             self.high_mode_base_household_load_w,
             self.high_mode_household_reserve_margin_percent,
             max(0.0, self.minutes_until_finish) / 60,
+        )
+
+    @property
+    def high_mode_time_priority_buffer_kwh(self) -> float:
+        """Return a late-day High-mode battery priority buffer."""
+        total_window_minutes = self._total_window_minutes
+        if total_window_minutes <= 0:
+            progress = 0.0
+        else:
+            elapsed_window_minutes = max(
+                0.0,
+                min(total_window_minutes, total_window_minutes - self.minutes_until_finish),
+            )
+            progress = elapsed_window_minutes / total_window_minutes
+
+        return time_priority_buffer_kwh(
+            self.high_mode_base_household_load_w,
+            self.high_mode_household_reserve_margin_percent,
+            progress,
+            min_hours=HIGH_FORECAST_POST_RUNTIME_PRIORITY_BUFFER_MIN_HOURS,
+            max_hours=HIGH_FORECAST_POST_RUNTIME_PRIORITY_BUFFER_MAX_HOURS,
+            exponent=HIGH_FORECAST_POST_RUNTIME_PRIORITY_BUFFER_EXPONENT,
         )
 
     @property
@@ -1022,8 +1047,14 @@ class SolarLoadController:
                 "high_forecast_post_runtime_next_hour_ratio": (
                     HIGH_FORECAST_POST_RUNTIME_NEXT_HOUR_RATIO
                 ),
-                "high_forecast_post_runtime_priority_buffer_kwh": (
-                    HIGH_FORECAST_POST_RUNTIME_PRIORITY_BUFFER_KWH
+                "high_forecast_post_runtime_priority_buffer_min_hours": (
+                    HIGH_FORECAST_POST_RUNTIME_PRIORITY_BUFFER_MIN_HOURS
+                ),
+                "high_forecast_post_runtime_priority_buffer_max_hours": (
+                    HIGH_FORECAST_POST_RUNTIME_PRIORITY_BUFFER_MAX_HOURS
+                ),
+                "high_forecast_post_runtime_priority_buffer_exponent": (
+                    HIGH_FORECAST_POST_RUNTIME_PRIORITY_BUFFER_EXPONENT
                 ),
                 "high_mode_base_household_load_w": (
                     self.high_mode_base_household_load_w
@@ -1229,6 +1260,23 @@ class SolarLoadController:
         if finish_at < now and self._window_crosses_midnight:
             finish_at += timedelta(days=1)
         return max(0.0, (finish_at - now).total_seconds() / 60)
+
+    @property
+    def _total_window_minutes(self) -> float:
+        """Return total minutes in the configured active window."""
+        start_time = _parse_time(
+            self.config.get(CONF_EARLIEST_START_TIME),
+            DEFAULT_EARLIEST_START_TIME,
+        )
+        finish_time = _parse_time(
+            self.config.get(CONF_LATEST_FINISH_TIME),
+            DEFAULT_LATEST_FINISH_TIME,
+        )
+        start_dt = datetime.combine(today(), start_time)
+        finish_dt = datetime.combine(today(), finish_time)
+        if finish_dt <= start_dt:
+            finish_dt += timedelta(days=1)
+        return max(0.0, (finish_dt - start_dt).total_seconds() / 60)
 
     def _runtime_deadline_reached(self, runtime_remaining_minutes: float) -> bool:
         """Return whether runtime has to start now to finish in time."""
@@ -1474,7 +1522,7 @@ class SolarLoadController:
             forecast_remaining_kwh
             < battery_charge_required_kwh
             + household_reserve_kwh
-            + HIGH_FORECAST_POST_RUNTIME_PRIORITY_BUFFER_KWH
+            + self.high_mode_time_priority_buffer_kwh
         )
 
     def _allow_post_runtime_export_guard_restart(self) -> bool:

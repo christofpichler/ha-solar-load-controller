@@ -25,6 +25,7 @@ setattr(custom_components, "solar_load_controller", solar_load_controller)
 from custom_components.solar_load_controller.energy import (
     household_energy_reserve_kwh,
     required_input_energy,
+    time_priority_buffer_kwh,
     usable_battery_charge_for_ac_surplus,
 )
 
@@ -57,6 +58,20 @@ class EnergyHelperTest(unittest.TestCase):
     def test_household_reserve_accounts_for_margin_and_time(self) -> None:
         """Household reserve should include the configured margin and remaining hours."""
         self.assertEqual(household_energy_reserve_kwh(250.0, 20.0, 8.0), 2.4)
+
+    def test_time_priority_buffer_uses_light_exponential_curve(self) -> None:
+        """Late-day priority buffer should grow with progress and household load."""
+        self.assertEqual(
+            time_priority_buffer_kwh(
+                250.0,
+                20.0,
+                0.429,
+                min_hours=2.0,
+                max_hours=8.0,
+                exponent=1.6,
+            ),
+            1.065,
+        )
 
 
 if __name__ == "__main__":

@@ -403,6 +403,9 @@ class SolarLoadDecisionReasonSensor(SolarLoadBaseSensor):
             "high_mode_household_reserve_kwh": (
                 self.controller.high_mode_household_reserve_kwh
             ),
+            "high_mode_time_priority_buffer_kwh": (
+                self.controller.high_mode_time_priority_buffer_kwh
+            ),
             "forecast_excess_after_battery_kwh": (
                 self.controller.forecast_excess_after_battery_kwh
             ),
