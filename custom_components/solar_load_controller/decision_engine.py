@@ -152,7 +152,6 @@ def evaluate_decision(inputs: DecisionInputs) -> DecisionResult:
     elif (
         inputs.grid_import_cooldown_active
         and not _minimum_runtime_overrides_grid(inputs)
-        and not inputs.export_guard_run_available
     ):
         should_run = False
         reason = DECISION_GRID_IMPORT_LIMIT_EXCEEDED
@@ -238,8 +237,7 @@ def _build_checks(inputs: DecisionInputs) -> tuple[DecisionCheck, ...]:
         DecisionCheck(
             "grid_import_cooldown",
             not inputs.grid_import_cooldown_active
-            or _minimum_runtime_overrides_grid(inputs)
-            or inputs.export_guard_run_available,
+            or _minimum_runtime_overrides_grid(inputs),
         ),
         DecisionCheck("runtime_remaining", inputs.runtime_remaining_minutes > 0),
         DecisionCheck(

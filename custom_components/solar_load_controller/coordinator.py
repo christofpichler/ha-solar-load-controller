@@ -1330,6 +1330,12 @@ class SolarLoadController:
             return False
         if self.forecast_day_class != FORECAST_DAY_MODE_HIGH:
             return False
+        if (
+            not self.is_load_on
+            and self.grid_import_w is not None
+            and self.grid_import_w > HIGH_FORECAST_NO_GRID_TOLERANCE_W
+        ):
+            return False
         if self._high_forecast_grid_import_active:
             return False
         if self._should_prioritize_battery_after_runtime():

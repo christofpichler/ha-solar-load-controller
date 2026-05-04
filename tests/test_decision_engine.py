@@ -242,6 +242,19 @@ class DecisionEngineTest(unittest.TestCase):
         self.assertFalse(result.should_run)
         self.assertEqual(result.reason, DECISION_MINIMUM_OFF_TIME_ACTIVE)
 
+    def test_grid_import_cooldown_blocks_high_forecast_export_guard_restart(self) -> None:
+        """Grid-import cooldown should block export-guard restarts."""
+        result = evaluate_decision(
+            make_inputs(
+                grid_import_cooldown_active=True,
+                grid_import_cooldown_remaining_seconds=540.0,
+                export_guard_run_available=True,
+            )
+        )
+
+        self.assertFalse(result.should_run)
+        self.assertEqual(result.reason, DECISION_GRID_IMPORT_LIMIT_EXCEEDED)
+
     def test_debug_summary_is_stable_for_grid_projection(self) -> None:
         """Grid import debug summary should not include changing watt values."""
         result = evaluate_decision(
