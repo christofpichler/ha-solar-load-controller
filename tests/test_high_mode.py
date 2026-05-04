@@ -23,7 +23,7 @@ solar_load_controller.__path__ = [str(PACKAGE_DIR)]
 setattr(custom_components, "solar_load_controller", solar_load_controller)
 
 from custom_components.solar_load_controller.high_mode import (
-    allow_post_runtime_curtailment_restart,
+    allow_post_runtime_export_guard_restart,
 )
 
 
@@ -33,7 +33,7 @@ class HighModeRestartTest(unittest.TestCase):
     def test_real_export_still_allows_post_runtime_restart(self) -> None:
         """Actual export should remain enough even after minimum runtime."""
         self.assertTrue(
-            allow_post_runtime_curtailment_restart(
+            allow_post_runtime_export_guard_restart(
                 is_load_on=False,
                 runtime_remaining_minutes=0.0,
                 available_surplus_w=450.0,
@@ -48,7 +48,7 @@ class HighModeRestartTest(unittest.TestCase):
     def test_borderline_battery_charge_restart_is_blocked(self) -> None:
         """A tiny battery-charging margin should not restart late in the day."""
         self.assertFalse(
-            allow_post_runtime_curtailment_restart(
+            allow_post_runtime_export_guard_restart(
                 is_load_on=False,
                 runtime_remaining_minutes=0.0,
                 available_surplus_w=0.0,
@@ -63,7 +63,7 @@ class HighModeRestartTest(unittest.TestCase):
     def test_weak_next_hour_forecast_blocks_post_runtime_restart(self) -> None:
         """Late restarts should stop once the next-hour forecast gets too weak."""
         self.assertFalse(
-            allow_post_runtime_curtailment_restart(
+            allow_post_runtime_export_guard_restart(
                 is_load_on=False,
                 runtime_remaining_minutes=0.0,
                 available_surplus_w=0.0,
@@ -78,7 +78,7 @@ class HighModeRestartTest(unittest.TestCase):
     def test_strong_next_hour_forecast_can_still_restart(self) -> None:
         """A strong next-hour forecast may still justify a restart."""
         self.assertTrue(
-            allow_post_runtime_curtailment_restart(
+            allow_post_runtime_export_guard_restart(
                 is_load_on=False,
                 runtime_remaining_minutes=0.0,
                 available_surplus_w=0.0,

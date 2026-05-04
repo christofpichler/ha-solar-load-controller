@@ -8,7 +8,8 @@ from typing import Any
 from .const import (
     DECISION_AUTOMATION_PAUSED,
     DECISION_BATTERY_PROTECTED,
-    DECISION_CURTAILMENT_PREVENTION,
+    DECISION_BATTERY_PRIORITY,
+    DECISION_EXPORT_GUARD,
     DECISION_FORECAST_ASSISTED_RUN,
     DECISION_FORECAST_WAIT,
     DECISION_GRID_IMPORT_LIMIT_EXCEEDED,
@@ -61,8 +62,14 @@ class DecisionInputs:
     min_on_remaining_minutes: float
     min_off_active: bool
     min_off_remaining_minutes: float
-    curtailment_prevention_run_available: bool
+    export_guard_run_available: bool
+    battery_priority_after_runtime: bool
     battery_headroom_kwh: float | None
+    battery_charge_required_kwh: float | None
+    high_forecast_post_runtime_battery_charge_required_kwh: float | None
+    high_mode_base_household_load_w: float
+    high_mode_household_reserve_margin_percent: float
+    high_mode_household_reserve_kwh: float
     forecast_excess_after_battery_kwh: float | None
     forecast_assisted_run_available: bool
     high_forecast_grid_import_active: bool
@@ -150,13 +157,15 @@ def evaluate_decision(inputs: DecisionInputs) -> DecisionResult:
     elif (
         inputs.grid_import_cooldown_active
         and not _minimum_runtime_overrides_grid(inputs)
-        and not inputs.curtailment_prevention_run_available
     ):
         should_run = False
         reason = DECISION_GRID_IMPORT_LIMIT_EXCEEDED
-    elif inputs.curtailment_prevention_run_available:
+    elif inputs.export_guard_run_available:
         should_run = True
-        reason = DECISION_CURTAILMENT_PREVENTION
+        reason = DECISION_EXPORT_GUARD
+    elif inputs.battery_priority_after_runtime:
+        should_run = False
+        reason = DECISION_BATTERY_PRIORITY
     elif inputs.runtime_remaining_minutes <= 0:
         should_run = False
         reason = DECISION_MINIMUM_RUNTIME_REACHED
@@ -236,13 +245,16 @@ def _build_checks(inputs: DecisionInputs) -> tuple[DecisionCheck, ...]:
         DecisionCheck(
             "grid_import_cooldown",
             not inputs.grid_import_cooldown_active
-            or _minimum_runtime_overrides_grid(inputs)
-            or inputs.curtailment_prevention_run_available,
+            or _minimum_runtime_overrides_grid(inputs),
         ),
         DecisionCheck("runtime_remaining", inputs.runtime_remaining_minutes > 0),
         DecisionCheck(
-            "curtailment_prevention",
-            inputs.curtailment_prevention_run_available,
+            "battery_priority_after_runtime",
+            not inputs.battery_priority_after_runtime,
+        ),
+        DecisionCheck(
+            "export_guard",
+            inputs.export_guard_run_available,
         ),
         DecisionCheck(
             "solar_surplus",
@@ -289,14 +301,16 @@ def _build_summary(inputs: DecisionInputs, should_run: bool, reason: str) -> str
         return "grid_import: projected import above start limit"
     if reason == DECISION_BATTERY_PROTECTED:
         return "battery: protected"
+    if reason == DECISION_BATTERY_PRIORITY:
+        return "battery_priority: reserving forecast for battery"
     if reason == DECISION_MINIMUM_RUNTIME_REQUIRED:
         if inputs.min_off_active:
             return "runtime_force: minimum runtime overrides min_off"
         if inputs.projected_grid_import_exceeds_limit:
             return "runtime_force: minimum runtime overrides grid limit"
         return "runtime_force: minimum runtime required"
-    if reason == DECISION_CURTAILMENT_PREVENTION:
-        return "curtailment: preventing forecast clipping"
+    if reason == DECISION_EXPORT_GUARD:
+        return "export_guard: preventing forecast clipping"
     if reason == DECISION_SOLAR_SURPLUS_AVAILABLE:
         return "solar: surplus covers load"
     if reason == DECISION_FORECAST_ASSISTED_RUN:

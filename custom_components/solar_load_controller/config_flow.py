@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+from datetime import time
 from typing import Any
 
 import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.const import CONF_NAME
-from homeassistant.data_entry_flow import FlowResult, section
+from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
 
 from .const import (
@@ -30,6 +31,8 @@ from .const import (
     CONF_GRID_EXPORT_SENSOR,
     CONF_GRID_IMPORT_LIMIT_W,
     CONF_GRID_IMPORT_SENSOR,
+    CONF_HIGH_MODE_BASE_HOUSEHOLD_LOAD_W,
+    CONF_HIGH_MODE_HOUSEHOLD_RESERVE_MARGIN_PERCENT,
     CONF_INVERTER_LIMIT_W,
     CONF_LATEST_FINISH_TIME,
     CONF_LOAD_POWER_W,
@@ -47,29 +50,14 @@ from .const import (
     DEFAULT_FORECAST_HIGH_THRESHOLD_KWH_PER_KWP,
     DEFAULT_LATEST_FINISH_TIME,
     DEFAULT_LOAD_POWER_W,
+    DEFAULT_HIGH_MODE_BASE_HOUSEHOLD_LOAD_W,
+    DEFAULT_HIGH_MODE_HOUSEHOLD_RESERVE_MARGIN_PERCENT,
     DEFAULT_MIN_BATTERY_SOC,
     DEFAULT_MIN_DAILY_RUNTIME_MINUTES,
     DEFAULT_MIN_OFF_MINUTES,
     DEFAULT_MIN_ON_MINUTES,
     DOMAIN,
 )
-
-SECTION_BATTERY = "battery_options"
-SECTION_CONTROL = "control_options"
-SECTION_GRID = "grid_options"
-SECTION_LOAD = "load_options"
-SECTION_PV = "pv_options"
-SECTION_RUNTIME = "runtime_options"
-
-SECTION_KEYS = {
-    SECTION_BATTERY,
-    SECTION_CONTROL,
-    SECTION_GRID,
-    SECTION_LOAD,
-    SECTION_PV,
-    SECTION_RUNTIME,
-}
-
 
 class SolarLoadControllerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Solar Load Controller."""
@@ -84,17 +72,32 @@ class SolarLoadControllerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self,
         user_input: dict[str, Any] | None = None,
     ) -> FlowResult:
-        """Handle load and runtime settings."""
+        """Handle load settings."""
         if user_input is not None:
-            user_input = _flatten_sections(user_input)
+            user_input = _normalize_flow_input(user_input)
             await self.async_set_unique_id(user_input[CONF_LOAD_SWITCH])
             self._abort_if_unique_id_configured()
+            self._config_data.update(user_input)
+            return await self.async_step_runtime()
+
+        return self.async_show_form(
+            step_id="user",
+            data_schema=vol.Schema(_load_schema({})),
+        )
+
+    async def async_step_runtime(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> FlowResult:
+        """Handle runtime settings."""
+        if user_input is not None:
+            user_input = _normalize_flow_input(user_input)
             self._config_data.update(user_input)
             return await self.async_step_energy()
 
         return self.async_show_form(
-            step_id="user",
-            data_schema=_basic_schema(),
+            step_id="runtime",
+            data_schema=vol.Schema(_runtime_schema({})),
         )
 
     async def async_step_energy(
@@ -103,12 +106,28 @@ class SolarLoadControllerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> FlowResult:
         """Handle grid, PV, and forecast settings."""
         if user_input is not None:
-            self._config_data.update(_flatten_sections(user_input))
-            return await self.async_step_advanced()
+            user_input = _normalize_flow_input(user_input)
+            self._config_data.update(user_input)
+            return await self.async_step_battery()
 
         return self.async_show_form(
             step_id="energy",
-            data_schema=_energy_schema(),
+            data_schema=vol.Schema(_energy_schema({})),
+        )
+
+    async def async_step_battery(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> FlowResult:
+        """Handle optional battery settings."""
+        if user_input is not None:
+            user_input = _normalize_flow_input(user_input)
+            self._config_data.update(user_input)
+            return await self.async_step_advanced()
+
+        return self.async_show_form(
+            step_id="battery",
+            data_schema=vol.Schema(_battery_schema({})),
         )
 
     async def async_step_advanced(
@@ -117,7 +136,8 @@ class SolarLoadControllerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> FlowResult:
         """Handle optional battery and diagnostic settings."""
         if user_input is not None:
-            self._config_data.update(_flatten_sections(user_input))
+            user_input = _normalize_flow_input(user_input)
+            self._config_data.update(user_input)
             return self.async_create_entry(
                 title=self._config_data[CONF_NAME],
                 data=self._config_data,
@@ -125,7 +145,7 @@ class SolarLoadControllerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="advanced",
-            data_schema=_advanced_schema(),
+            data_schema=vol.Schema(_advanced_schema({})),
         )
 
     @staticmethod
@@ -148,15 +168,40 @@ class SolarLoadControllerOptionsFlow(config_entries.OptionsFlow):
         self,
         user_input: dict[str, Any] | None = None,
     ) -> FlowResult:
-        """Manage load and runtime options."""
+        """Manage load options."""
         if user_input is not None:
-            self._options_data.update(_flatten_sections(user_input))
-            return await self.async_step_energy()
+            user_input = _normalize_flow_input(user_input)
+            self._options_data.update(user_input)
+            return await self.async_step_runtime()
 
-        merged = {**self._config_entry.data, **self._config_entry.options}
+        merged = _merged_flow_defaults(
+            self._config_entry.data,
+            self._config_entry.options,
+            self._options_data,
+        )
         return self.async_show_form(
             step_id="init",
-            data_schema=_basic_schema(defaults=merged),
+            data_schema=vol.Schema(_load_schema(merged)),
+        )
+
+    async def async_step_runtime(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> FlowResult:
+        """Manage runtime options."""
+        if user_input is not None:
+            user_input = _normalize_flow_input(user_input)
+            self._options_data.update(user_input)
+            return await self.async_step_energy()
+
+        merged = _merged_flow_defaults(
+            self._config_entry.data,
+            self._config_entry.options,
+            self._options_data,
+        )
+        return self.async_show_form(
+            step_id="runtime",
+            data_schema=vol.Schema(_runtime_schema(merged)),
         )
 
     async def async_step_energy(
@@ -165,13 +210,38 @@ class SolarLoadControllerOptionsFlow(config_entries.OptionsFlow):
     ) -> FlowResult:
         """Manage grid, PV, and forecast options."""
         if user_input is not None:
-            self._options_data.update(_flatten_sections(user_input))
-            return await self.async_step_advanced()
+            user_input = _normalize_flow_input(user_input)
+            self._options_data.update(user_input)
+            return await self.async_step_battery()
 
-        merged = {**self._config_entry.data, **self._config_entry.options}
+        merged = _merged_flow_defaults(
+            self._config_entry.data,
+            self._config_entry.options,
+            self._options_data,
+        )
         return self.async_show_form(
             step_id="energy",
-            data_schema=_energy_schema(defaults=merged),
+            data_schema=vol.Schema(_energy_schema(merged)),
+        )
+
+    async def async_step_battery(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> FlowResult:
+        """Manage optional battery settings."""
+        if user_input is not None:
+            user_input = _normalize_flow_input(user_input)
+            self._options_data.update(user_input)
+            return await self.async_step_advanced()
+
+        merged = _merged_flow_defaults(
+            self._config_entry.data,
+            self._config_entry.options,
+            self._options_data,
+        )
+        return self.async_show_form(
+            step_id="battery",
+            data_schema=vol.Schema(_battery_schema(merged)),
         )
 
     async def async_step_advanced(
@@ -180,68 +250,19 @@ class SolarLoadControllerOptionsFlow(config_entries.OptionsFlow):
     ) -> FlowResult:
         """Manage optional battery and diagnostic options."""
         if user_input is not None:
-            self._options_data.update(_flatten_sections(user_input))
+            user_input = _normalize_flow_input(user_input)
+            self._options_data.update(user_input)
             return self.async_create_entry(title="", data=self._options_data)
 
-        merged = {**self._config_entry.data, **self._config_entry.options}
+        merged = _merged_flow_defaults(
+            self._config_entry.data,
+            self._config_entry.options,
+            self._options_data,
+        )
         return self.async_show_form(
             step_id="advanced",
-            data_schema=_advanced_schema(defaults=merged),
+            data_schema=vol.Schema(_advanced_schema(merged)),
         )
-
-
-def _basic_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
-    """Return load and runtime settings schema."""
-    defaults = defaults or {}
-
-    return vol.Schema(
-        {
-            vol.Required(SECTION_LOAD): section(
-                vol.Schema(_load_schema(defaults)),
-                {"collapsed": False},
-            ),
-            vol.Required(SECTION_RUNTIME): section(
-                vol.Schema(_runtime_schema(defaults)),
-                {"collapsed": False},
-            ),
-        }
-    )
-
-
-def _energy_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
-    """Return grid, PV, and forecast settings schema."""
-    defaults = defaults or {}
-
-    return vol.Schema(
-        {
-            vol.Required(SECTION_GRID): section(
-                vol.Schema(_grid_schema(defaults)),
-                {"collapsed": False},
-            ),
-            vol.Required(SECTION_PV): section(
-                vol.Schema(_pv_schema(defaults)),
-                {"collapsed": False},
-            ),
-        }
-    )
-
-
-def _advanced_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
-    """Return optional battery and diagnostic settings schema."""
-    defaults = defaults or {}
-
-    return vol.Schema(
-        {
-            vol.Required(SECTION_BATTERY): section(
-                vol.Schema(_battery_schema(defaults)),
-                {"collapsed": False},
-            ),
-            vol.Required(SECTION_CONTROL): section(
-                vol.Schema(_control_schema(defaults)),
-                {"collapsed": False},
-            ),
-        }
-    )
 
 
 def _load_schema(defaults: dict[str, Any]) -> dict[Any, Any]:
@@ -351,6 +372,14 @@ def _grid_schema(defaults: dict[str, Any]) -> dict[Any, Any]:
     }
 
 
+def _energy_schema(defaults: dict[str, Any]) -> dict[Any, Any]:
+    """Return combined grid, PV, and forecast settings schema."""
+    return {
+        **_grid_schema(defaults),
+        **_pv_schema(defaults),
+    }
+
+
 def _pv_schema(defaults: dict[str, Any]) -> dict[Any, Any]:
     """Return PV settings schema."""
     return {
@@ -452,6 +481,36 @@ def _battery_schema(defaults: dict[str, Any]) -> dict[Any, Any]:
                 mode=selector.NumberSelectorMode.SLIDER,
             )
         ),
+        vol.Required(
+            CONF_HIGH_MODE_BASE_HOUSEHOLD_LOAD_W,
+            default=defaults.get(
+                CONF_HIGH_MODE_BASE_HOUSEHOLD_LOAD_W,
+                DEFAULT_HIGH_MODE_BASE_HOUSEHOLD_LOAD_W,
+            ),
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=5000,
+                step=10,
+                unit_of_measurement="W",
+                mode=selector.NumberSelectorMode.BOX,
+            )
+        ),
+        vol.Required(
+            CONF_HIGH_MODE_HOUSEHOLD_RESERVE_MARGIN_PERCENT,
+            default=defaults.get(
+                CONF_HIGH_MODE_HOUSEHOLD_RESERVE_MARGIN_PERCENT,
+                DEFAULT_HIGH_MODE_HOUSEHOLD_RESERVE_MARGIN_PERCENT,
+            ),
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=100,
+                step=5,
+                unit_of_measurement="%",
+                mode=selector.NumberSelectorMode.SLIDER,
+            )
+        ),
     }
 
 
@@ -467,6 +526,10 @@ def _control_schema(defaults: dict[str, Any]) -> dict[Any, Any]:
             default=defaults.get(CONF_MIN_RUNTIME_GRID_OVERRIDE, True),
         ): selector.BooleanSelector(),
     }
+
+def _advanced_schema(defaults: dict[str, Any]) -> dict[Any, Any]:
+    """Return diagnostics and fallback settings schema."""
+    return _control_schema(defaults)
 
 
 def _required(key: str, defaults: dict[str, Any]) -> vol.Required:
@@ -488,12 +551,20 @@ def _measurement_entity_selector() -> selector.EntitySelector:
     return selector.EntitySelector(selector.EntitySelectorConfig())
 
 
-def _flatten_sections(user_input: dict[str, Any]) -> dict[str, Any]:
-    """Flatten Home Assistant section input to flat config entry data."""
-    flattened: dict[str, Any] = {}
-    for key, value in user_input.items():
-        if key in SECTION_KEYS and isinstance(value, dict):
-            flattened.update(value)
+def _normalize_flow_input(data: dict[str, Any]) -> dict[str, Any]:
+    """Normalize config-flow values into JSON-serializable types."""
+    normalized: dict[str, Any] = {}
+    for key, value in data.items():
+        if isinstance(value, time):
+            normalized[key] = value.isoformat()
         else:
-            flattened[key] = value
-    return flattened
+            normalized[key] = value
+    return normalized
+
+
+def _merged_flow_defaults(*parts: dict[str, Any]) -> dict[str, Any]:
+    """Merge flow defaults and normalize them for selector defaults."""
+    merged: dict[str, Any] = {}
+    for part in parts:
+        merged.update(part)
+    return _normalize_flow_input(merged)

@@ -24,11 +24,13 @@ solar_load_controller.__path__ = [str(PACKAGE_DIR)]
 setattr(custom_components, "solar_load_controller", solar_load_controller)
 
 from custom_components.solar_load_controller.const import (
-    DECISION_CURTAILMENT_PREVENTION,
+    DECISION_BATTERY_PRIORITY,
+    DECISION_EXPORT_GUARD,
     DECISION_FORECAST_WAIT,
     DECISION_GRID_IMPORT_LIMIT_EXCEEDED,
     DECISION_MINIMUM_OFF_TIME_ACTIVE,
     DECISION_MINIMUM_ON_TIME_ACTIVE,
+    DECISION_MINIMUM_RUNTIME_REACHED,
     DECISION_MINIMUM_RUNTIME_REQUIRED,
     DECISION_SOLAR_SURPLUS_AVAILABLE,
 )
@@ -67,8 +69,14 @@ def make_inputs(**overrides: object) -> DecisionInputs:
         min_on_remaining_minutes=0.0,
         min_off_active=False,
         min_off_remaining_minutes=0.0,
-        curtailment_prevention_run_available=False,
+        export_guard_run_available=False,
+        battery_priority_after_runtime=False,
         battery_headroom_kwh=4.0,
+        battery_charge_required_kwh=4.444,
+        high_forecast_post_runtime_battery_charge_required_kwh=4.2,
+        high_mode_base_household_load_w=250.0,
+        high_mode_household_reserve_margin_percent=20.0,
+        high_mode_household_reserve_kwh=2.4,
         forecast_excess_after_battery_kwh=-1.0,
         forecast_assisted_run_available=False,
         high_forecast_grid_import_active=False,
@@ -109,11 +117,11 @@ class DecisionEngineTest(unittest.TestCase):
         self.assertFalse(result.should_run)
         self.assertEqual(result.reason, DECISION_FORECAST_WAIT)
 
-    def test_curtailment_prevention_runs_before_runtime_is_due(self) -> None:
-        """High forecast curtailment prevention should start the load early."""
+    def test_export_guard_runs_before_runtime_is_due(self) -> None:
+        """High forecast export guard should start the load early."""
         result = evaluate_decision(
             make_inputs(
-                curtailment_prevention_run_available=True,
+                export_guard_run_available=True,
                 should_wait_for_forecast=True,
                 battery_soc=20.0,
                 battery_power_state="discharging",
@@ -121,20 +129,54 @@ class DecisionEngineTest(unittest.TestCase):
         )
 
         self.assertTrue(result.should_run)
-        self.assertEqual(result.reason, DECISION_CURTAILMENT_PREVENTION)
+        self.assertEqual(result.reason, DECISION_EXPORT_GUARD)
 
-    def test_curtailment_prevention_can_run_after_minimum_runtime(self) -> None:
-        """Curtailment prevention may continue after minimum runtime is met."""
+    def test_export_guard_can_run_after_minimum_runtime(self) -> None:
+        """Export guard may continue after minimum runtime is met."""
         result = evaluate_decision(
             make_inputs(
                 runtime_remaining_minutes=0.0,
-                curtailment_prevention_run_available=True,
+                export_guard_run_available=True,
                 forecast_excess_after_battery_kwh=1.2,
             )
         )
 
         self.assertTrue(result.should_run)
-        self.assertEqual(result.reason, DECISION_CURTAILMENT_PREVENTION)
+        self.assertEqual(result.reason, DECISION_EXPORT_GUARD)
+
+    def test_runtime_met_beats_export_guard_when_no_real_extra_surplus_exists(self) -> None:
+        """Export guard should not self-sustain purely from the already running load."""
+        result = evaluate_decision(
+            make_inputs(
+                is_load_on=True,
+                runtime_remaining_minutes=0.0,
+                export_guard_run_available=False,
+                battery_priority_after_runtime=False,
+                available_surplus_w=0.0,
+                effective_solar_surplus_w=400.0,
+                forecast_excess_after_battery_kwh=3.0,
+            )
+        )
+
+        self.assertFalse(result.should_run)
+        self.assertEqual(result.reason, DECISION_MINIMUM_RUNTIME_REACHED)
+
+    def test_battery_priority_replaces_runtime_met_after_runtime(self) -> None:
+        """High-mode battery reservation should expose its own reason after runtime is met."""
+        result = evaluate_decision(
+            make_inputs(
+                runtime_remaining_minutes=0.0,
+                battery_priority_after_runtime=True,
+                export_guard_run_available=False,
+            )
+        )
+
+        self.assertFalse(result.should_run)
+        self.assertEqual(result.reason, DECISION_BATTERY_PRIORITY)
+        self.assertEqual(
+            result.summary,
+            "battery_priority: reserving forecast for battery",
+        )
 
     def test_high_forecast_grid_import_turns_running_load_off(self) -> None:
         """High forecast mode should stop after min_on when grid import starts."""
@@ -142,7 +184,7 @@ class DecisionEngineTest(unittest.TestCase):
             make_inputs(
                 is_load_on=True,
                 high_forecast_grid_import_active=True,
-                curtailment_prevention_run_available=True,
+                export_guard_run_available=True,
             )
         )
 
@@ -157,7 +199,7 @@ class DecisionEngineTest(unittest.TestCase):
                 is_load_on=True,
                 min_on_active=True,
                 high_forecast_grid_import_active=True,
-                curtailment_prevention_run_available=True,
+                export_guard_run_available=True,
             )
         )
 
@@ -227,18 +269,31 @@ class DecisionEngineTest(unittest.TestCase):
         self.assertFalse(result.should_run)
         self.assertEqual(result.reason, DECISION_MINIMUM_OFF_TIME_ACTIVE)
 
-    def test_min_off_blocks_high_forecast_curtailment_start(self) -> None:
+    def test_min_off_blocks_high_forecast_export_guard_start(self) -> None:
         """Min off should avoid rapid high-mode restarts."""
         result = evaluate_decision(
             make_inputs(
                 min_off_active=True,
                 min_off_remaining_minutes=8.0,
-                curtailment_prevention_run_available=True,
+                export_guard_run_available=True,
             )
         )
 
         self.assertFalse(result.should_run)
         self.assertEqual(result.reason, DECISION_MINIMUM_OFF_TIME_ACTIVE)
+
+    def test_grid_import_cooldown_blocks_high_forecast_export_guard_restart(self) -> None:
+        """Grid-import cooldown should block export-guard restarts."""
+        result = evaluate_decision(
+            make_inputs(
+                grid_import_cooldown_active=True,
+                grid_import_cooldown_remaining_seconds=540.0,
+                export_guard_run_available=True,
+            )
+        )
+
+        self.assertFalse(result.should_run)
+        self.assertEqual(result.reason, DECISION_GRID_IMPORT_LIMIT_EXCEEDED)
 
     def test_debug_summary_is_stable_for_grid_projection(self) -> None:
         """Grid import debug summary should not include changing watt values."""

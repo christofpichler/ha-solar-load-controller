@@ -3,182 +3,83 @@
   "config": {
     "step": {
       "user": {
-        "title": "1/3 Grunddaten",
-        "description": "Waehle den zu steuernden Verbraucher und lege fest, wann und wie lange er mindestens laufen darf.",
+        "title": "1/5 Verbraucher",
+        "description": "Wähle den Schalter, den die Integration steuern soll, und trage die typische Leistung des Verbrauchers ein. Für reine Tests kannst du auch einen virtuellen Schalter verwenden.",
         "data": {
           "name": "Name",
           "load_switch": "Verbraucher-Schalter oder virtueller Schalter",
-          "load_power_w": "Verbraucherleistung (W)",
+          "load_power_w": "Verbraucherleistung (W)"
+        }
+      },
+      "runtime": {
+        "title": "2/5 Laufzeit",
+        "description": "Lege die tägliche Mindestlaufzeit, das erlaubte Zeitfenster und den Taktschutz fest. Diese Seite bestimmt, wie dringend der Verbraucher später am Tag noch laufen muss.",
+        "data": {
           "min_daily_runtime_minutes": "Mindestlaufzeit pro Tag",
-          "grid_import_sensor": "Netzbezug (positiv)",
-          "grid_export_sensor": "Netzeinspeisung (positiv)",
-          "grid_import_limit_w": "Max. Netzbezug im Low-Modus",
-          "pv_current_power_sensor": "Aktuelle PV-Leistung (optional)",
-          "pv_size_kwp": "PV-Anlagengroesse (kWp)",
-          "inverter_limit_w": "Wechselrichterlimit (optional)",
-          "forecast_today_sensor": "Tagesprognose heute (kWh)",
-          "forecast_high_threshold_kwh_per_kwp": "High-Modus ab (kWh/kWp)",
-          "forecast_next_hour_sensor": "Prognose naechste Stunde (optional)",
-          "forecast_remaining_today_sensor": "Restprognose heute (optional)",
-          "battery_soc_sensor": "Akku-Ladestand (optional)",
-          "battery_power_sensor": "Akku-Leistung (optional)",
-          "battery_power_direction": "Vorzeichen der Akku-Leistung",
-          "battery_capacity_kwh": "Akku-Kapazitaet (optional)",
-          "battery_mode": "Akku-Modus",
-          "min_battery_soc": "Mindest-Akkustand",
-          "debug_sensor_enabled": "Debug-Sensor anzeigen",
-          "min_runtime_grid_override": "Low-Mindestlaufzeit darf Netzlimit uebersteuern",
           "earliest_start_time": "Start erlaubt ab",
-          "min_on_minutes": "Mindest-Einschaltdauer (Taktschutz)",
-          "min_off_minutes": "Mindest-Ausschaltdauer (Taktschutz)",
-          "latest_finish_time": "Laufzeit spaetestens bis"
+          "latest_finish_time": "Laufzeit spätestens bis",
+          "min_on_minutes": "Mindest-Einschaltdauer",
+          "min_off_minutes": "Mindest-Ausschaltdauer"
         },
         "data_description": {
-          "debug_sensor_enabled": "Legt den Decision-Debug-Sensor an und schreibt bei jeder geaenderten Entscheidung eine JSONL-Zeile in /config/solar_load_controller_decisions.jsonl. Den genauen Pfad zeigt der Debug-Sensor im Attribut debug_log.path. Aufbewahrung: 7 Tage oder maximal 2000 Eintraege."
-        },
-        "sections": {
-          "load_options": {
-            "name": "Verbraucher",
-            "data": {
-              "name": "Name",
-              "load_switch": "Verbraucher-Schalter oder virtueller Schalter",
-              "load_power_w": "Verbraucherleistung (W)"
-            }
-          },
-          "runtime_options": {
-            "name": "Laufzeit",
-            "data": {
-              "min_daily_runtime_minutes": "Mindestlaufzeit pro Tag",
-              "earliest_start_time": "Start erlaubt ab",
-              "min_on_minutes": "Mindest-Einschaltdauer (Taktschutz)",
-              "min_off_minutes": "Mindest-Ausschaltdauer (Taktschutz)",
-              "latest_finish_time": "Laufzeit spaetestens bis"
-            }
-          },
-          "grid_options": {
-            "name": "Netz",
-            "data": {
-              "grid_import_sensor": "Netzbezug (positiv)",
-              "grid_export_sensor": "Netzeinspeisung (positiv)",
-              "grid_import_limit_w": "Max. Netzbezug im Low-Modus"
-            }
-          },
-          "pv_options": {
-            "name": "PV und Prognose",
-            "data": {
-              "pv_current_power_sensor": "Aktuelle PV-Leistung (optional)",
-              "pv_size_kwp": "PV-Anlagengroesse (kWp)",
-              "inverter_limit_w": "Wechselrichterlimit (optional)",
-              "forecast_today_sensor": "Tagesprognose heute (kWh)",
-              "forecast_high_threshold_kwh_per_kwp": "High-Modus ab (kWh/kWp)",
-              "forecast_next_hour_sensor": "Prognose naechste Stunde (optional)",
-              "forecast_remaining_today_sensor": "Restprognose heute (optional)"
-            }
-          },
-          "battery_options": {
-            "name": "Akku",
-            "data": {
-              "battery_soc_sensor": "Akku-Ladestand (optional)",
-              "battery_power_sensor": "Akku-Leistung (optional)",
-              "battery_power_direction": "Vorzeichen der Akku-Leistung",
-              "battery_capacity_kwh": "Akku-Kapazitaet (optional)",
-              "battery_mode": "Akku-Modus",
-              "min_battery_soc": "Mindest-Akkustand"
-            }
-          },
-          "control_options": {
-            "name": "Steuerung",
-            "description": "Debug ist fuer Fehlersuche gedacht. Wenn aktiv, wird ein Debug-Sensor angelegt und eine Entscheidungsdatei im Home-Assistant-Konfigurationsordner geschrieben.",
-            "data": {
-              "debug_sensor_enabled": "Debug-Sensor anzeigen",
-              "min_runtime_grid_override": "Low-Mindestlaufzeit darf Netzlimit uebersteuern"
-            },
-            "data_description": {
-              "debug_sensor_enabled": "Schreibt Entscheidungswechsel mit Sensorwerten in /config/solar_load_controller_decisions.jsonl. Der genaue Pfad steht im Debug-Sensor unter debug_log.path."
-            }
-          }
+          "min_daily_runtime_minutes": "Garantierte Laufzeit für den Tag. Wenn PV nicht reicht, kann der Low-Modus das später trotzdem noch erzwingen.",
+          "min_on_minutes": "Verhindert schnelles Aus- und Einschalten, nachdem der Verbraucher gestartet wurde.",
+          "min_off_minutes": "Verhindert einen sofortigen Neustart, nachdem der Verbraucher gestoppt wurde."
         }
       },
       "energy": {
-        "title": "2/3 Energie und Prognose",
-        "description": "Waehle Netzbezug, Netzeinspeisung und die PV-Prognose. Die Prognose ist Pflicht und setzt den Tagesmodus Low oder High.",
+        "title": "3/5 Netz und Prognose",
+        "description": "Verbinde die Live-Netzsensoren und die PV-Prognose. Diese Seite entscheidet, ob der Tag als Low oder High behandelt wird und wie viel Netzbezug im Low-Modus erlaubt ist.",
         "data": {
           "grid_import_sensor": "Netzbezug (positiv)",
           "grid_export_sensor": "Netzeinspeisung (positiv)",
-          "grid_import_limit_w": "Max. Netzbezug im Low-Modus",
+          "grid_import_limit_w": "Netzlimit im Low-Modus",
           "pv_current_power_sensor": "Aktuelle PV-Leistung (optional)",
-          "pv_size_kwp": "PV-Anlagengroesse (kWp)",
+          "pv_size_kwp": "PV-Anlagengröße (kWp)",
           "inverter_limit_w": "Wechselrichterlimit (optional)",
           "forecast_today_sensor": "Tagesprognose heute (kWh)",
           "forecast_high_threshold_kwh_per_kwp": "High-Modus ab (kWh/kWp)",
-          "forecast_next_hour_sensor": "Prognose naechste Stunde (optional)",
+          "forecast_next_hour_sensor": "Prognose nächste Stunde (optional)",
           "forecast_remaining_today_sensor": "Restprognose heute (optional)"
         },
-        "sections": {
-          "grid_options": {
-            "name": "Netz",
-            "description": "Beide Sensoren muessen positive Wattwerte liefern. Kurze Netzimport-Spitzen werden durch die 15-Sekunden-Verzoegerung ignoriert.",
-            "data": {
-              "grid_import_sensor": "Netzbezug (positiv)",
-              "grid_export_sensor": "Netzeinspeisung (positiv)",
-              "grid_import_limit_w": "Max. Netzbezug im Low-Modus"
-            }
-          },
-          "pv_options": {
-            "name": "PV und Prognose",
-            "description": "Die Tagesprognose wird fuer die Low/High-Einstufung genutzt. High bedeutet: PV-Ueberschuss hat Vorrang.",
-            "data": {
-              "pv_current_power_sensor": "Aktuelle PV-Leistung (optional)",
-              "pv_size_kwp": "PV-Anlagengroesse (kWp)",
-              "inverter_limit_w": "Wechselrichterlimit (optional)",
-              "forecast_today_sensor": "Tagesprognose heute (kWh)",
-              "forecast_high_threshold_kwh_per_kwp": "High-Modus ab (kWh/kWp)",
-              "forecast_next_hour_sensor": "Prognose naechste Stunde (optional)",
-              "forecast_remaining_today_sensor": "Restprognose heute (optional)"
-            }
-          }
+        "data_description": {
+          "grid_import_limit_w": "Maximaler Netzbezug, der im Low-Modus erlaubt ist, bevor der Verbraucher blockiert oder gestoppt wird. Im High-Modus gilt eine deutlich strengere Import-Regel.",
+          "forecast_high_threshold_kwh_per_kwp": "Wenn die Tagesprognose pro kWp diesen Wert erreicht, wird der Tag als High-Modus behandelt.",
+          "forecast_next_hour_sensor": "Verbessert kurzfristige Entscheidungen, zum Beispiel Warten oder spätere Neustarts.",
+          "forecast_remaining_today_sensor": "Verbessert die Berechnung, wie viel Energie für den Rest des Tages noch erwartet wird."
         }
       },
-      "advanced": {
-        "title": "3/3 Akku und Diagnose",
-        "description": "Akku-Werte sind optional, verbessern aber die Entscheidung. Debug nur aktivieren, wenn du Verhalten analysieren willst.",
+      "battery": {
+        "title": "4/5 Akku",
+        "description": "Akku-Werte sind optional, verbessern aber die Entscheidungen deutlich. Kapazität und SOC helfen abzuschätzen, ob die Restprognose den Akku später noch füllen kann.",
         "data": {
           "battery_soc_sensor": "Akku-Ladestand (optional)",
           "battery_power_sensor": "Akku-Leistung (optional)",
           "battery_power_direction": "Vorzeichen der Akku-Leistung",
-          "battery_capacity_kwh": "Akku-Kapazitaet (optional)",
+          "battery_capacity_kwh": "Akku-Kapazität (optional)",
           "battery_mode": "Akku-Modus",
           "min_battery_soc": "Mindest-Akkustand",
-          "debug_sensor_enabled": "Debug-Sensor und Datei aktivieren",
-          "min_runtime_grid_override": "Low-Mindestlaufzeit darf Netzlimit uebersteuern"
+          "high_mode_base_household_load_w": "High-Grundverbrauch Haushalt",
+          "high_mode_household_reserve_margin_percent": "High-Reserveaufschlag Haushalt"
         },
         "data_description": {
-          "debug_sensor_enabled": "Legt den Decision-Debug-Sensor an und schreibt bei jeder geaenderten Entscheidung eine JSONL-Zeile in /config/solar_load_controller_decisions.jsonl. Den genauen Pfad zeigt der Debug-Sensor im Attribut debug_log.path. Aufbewahrung: 7 Tage oder maximal 2000 Eintraege."
+          "battery_power_direction": "Lege fest, wie sich der rohe Akku-Leistungssensor verhält. Intern normiert die Integration den Wert so, dass positiv Laden bedeutet.",
+          "battery_mode": "Wähle, ob die Integration den Akku vorsichtiger schützen oder ihn bei Bedarf aktiv verwenden soll.",
+          "min_battery_soc": "Im Modus Akku verwenden vermeidet die Integration erzwungene Akku-Nutzung unterhalb dieser SOC-Grenze.",
+          "high_mode_base_household_load_w": "Wird nur auf High-Tagen verwendet, nachdem die tägliche Mindestlaufzeit bereits erreicht ist. Das ist der erwartete laufende Grundverbrauch des Haushalts, der vor optionaler weiterer Laufzeit aus der Restprognose reserviert werden soll.",
+          "high_mode_household_reserve_margin_percent": "Zusätzlicher Sicherheitsaufschlag auf den Grundverbrauch, um schwankende spätere Haushaltslasten abzufangen."
+        }
+      },
+      "advanced": {
+        "title": "5/5 Diagnose und Fallback",
+        "description": "Aktiviere Debug nur für Fehlersuche. Die Low-Fallback-Option sorgt dafür, dass die Mindestlaufzeit notfalls trotzdem erreicht werden kann, auch wenn das normale Netzlimit den Start blockieren würde.",
+        "data": {
+          "debug_sensor_enabled": "Debug-Sensor und Datei aktivieren",
+          "min_runtime_grid_override": "Low-Mindestlaufzeit darf Netzlimit übersteuern"
         },
-        "sections": {
-          "battery_options": {
-            "name": "Akku",
-            "description": "Wenn Akku-Leistung gesetzt ist, kann die Logik Laden und Entladen besser einordnen.",
-            "data": {
-              "battery_soc_sensor": "Akku-Ladestand (optional)",
-              "battery_power_sensor": "Akku-Leistung (optional)",
-              "battery_power_direction": "Vorzeichen der Akku-Leistung",
-              "battery_capacity_kwh": "Akku-Kapazitaet (optional)",
-              "battery_mode": "Akku-Modus",
-              "min_battery_soc": "Mindest-Akkustand"
-            }
-          },
-          "control_options": {
-            "name": "Diagnose und Low-Modus",
-            "description": "Debug ist fuer Fehlersuche gedacht. Wenn aktiv, wird eine Entscheidungsdatei im Home-Assistant-Konfigurationsordner geschrieben.",
-            "data": {
-              "debug_sensor_enabled": "Debug-Sensor und Datei aktivieren",
-              "min_runtime_grid_override": "Low-Mindestlaufzeit darf Netzlimit uebersteuern"
-            },
-            "data_description": {
-              "debug_sensor_enabled": "Schreibt Entscheidungswechsel mit Sensorwerten in /config/solar_load_controller_decisions.jsonl. Der genaue Pfad steht im Debug-Sensor unter debug_log.path."
-            }
-          }
+        "data_description": {
+          "debug_sensor_enabled": "Legt den Decision Debug Sensor an und schreibt bei jeder geänderten Entscheidung eine JSONL-Zeile in /config/solar_load_controller_decisions.jsonl. Den genauen Pfad zeigt der Debug-Sensor im Attribut debug_log.path. Aufbewahrung: 7 Tage oder maximal 2000 Einträge.",
+          "min_runtime_grid_override": "Wenn aktiv, darf der Low-Modus den Verbraucher trotzdem starten, um die tägliche Mindestlaufzeit zu erreichen, auch wenn das normale Low-Netzlimit den Start blockieren würde."
         }
       }
     }
@@ -186,181 +87,83 @@
   "options": {
     "step": {
       "init": {
-        "title": "Optionen: 1/3 Grunddaten",
-        "description": "Passe Verbraucher, Laufzeitfenster und Taktschutz an.",
+        "title": "Optionen: 1/5 Verbraucher",
+        "description": "Passe den gesteuerten Schalter und die typische Leistung des Verbrauchers an.",
         "data": {
           "name": "Name",
           "load_switch": "Verbraucher-Schalter oder virtueller Schalter",
-          "load_power_w": "Verbraucherleistung (W)",
+          "load_power_w": "Verbraucherleistung (W)"
+        }
+      },
+      "runtime": {
+        "title": "Optionen: 2/5 Laufzeit",
+        "description": "Passe die garantierte Laufzeit, das Zeitfenster und den Taktschutz an.",
+        "data": {
           "min_daily_runtime_minutes": "Mindestlaufzeit pro Tag",
-          "grid_import_sensor": "Netzbezug (positiv)",
-          "grid_export_sensor": "Netzeinspeisung (positiv)",
-          "grid_import_limit_w": "Max. Netzbezug im Low-Modus",
-          "pv_current_power_sensor": "Aktuelle PV-Leistung (optional)",
-          "pv_size_kwp": "PV-Anlagengroesse (kWp)",
-          "inverter_limit_w": "Wechselrichterlimit (optional)",
-          "forecast_today_sensor": "Tagesprognose heute (kWh)",
-          "forecast_high_threshold_kwh_per_kwp": "High-Modus ab (kWh/kWp)",
-          "forecast_next_hour_sensor": "Prognose naechste Stunde (optional)",
-          "forecast_remaining_today_sensor": "Restprognose heute (optional)",
-          "battery_soc_sensor": "Akku-Ladestand (optional)",
-          "battery_power_sensor": "Akku-Leistung (optional)",
-          "battery_power_direction": "Vorzeichen der Akku-Leistung",
-          "battery_capacity_kwh": "Akku-Kapazitaet (optional)",
-          "battery_mode": "Akku-Modus",
-          "min_battery_soc": "Mindest-Akkustand",
-          "debug_sensor_enabled": "Debug-Sensor anzeigen",
-          "min_runtime_grid_override": "Low-Mindestlaufzeit darf Netzlimit uebersteuern",
           "earliest_start_time": "Start erlaubt ab",
-          "min_on_minutes": "Mindest-Einschaltdauer (Taktschutz)",
-          "min_off_minutes": "Mindest-Ausschaltdauer (Taktschutz)",
-          "latest_finish_time": "Laufzeit spaetestens bis"
+          "latest_finish_time": "Laufzeit spätestens bis",
+          "min_on_minutes": "Mindest-Einschaltdauer",
+          "min_off_minutes": "Mindest-Ausschaltdauer"
         },
         "data_description": {
-          "debug_sensor_enabled": "Legt den Decision-Debug-Sensor an und schreibt bei jeder geaenderten Entscheidung eine JSONL-Zeile in /config/solar_load_controller_decisions.jsonl. Den genauen Pfad zeigt der Debug-Sensor im Attribut debug_log.path. Aufbewahrung: 7 Tage oder maximal 2000 Eintraege."
-        },
-        "sections": {
-          "load_options": {
-            "name": "Verbraucher",
-            "data": {
-              "name": "Name",
-              "load_switch": "Verbraucher-Schalter oder virtueller Schalter",
-              "load_power_w": "Verbraucherleistung (W)"
-            }
-          },
-          "runtime_options": {
-            "name": "Laufzeit",
-            "data": {
-              "min_daily_runtime_minutes": "Mindestlaufzeit pro Tag",
-              "earliest_start_time": "Start erlaubt ab",
-              "min_on_minutes": "Mindest-Einschaltdauer (Taktschutz)",
-              "min_off_minutes": "Mindest-Ausschaltdauer (Taktschutz)",
-              "latest_finish_time": "Laufzeit spaetestens bis"
-            }
-          },
-          "grid_options": {
-            "name": "Netz",
-            "data": {
-              "grid_import_sensor": "Netzbezug (positiv)",
-              "grid_export_sensor": "Netzeinspeisung (positiv)",
-              "grid_import_limit_w": "Max. Netzbezug im Low-Modus"
-            }
-          },
-          "pv_options": {
-            "name": "PV und Prognose",
-            "data": {
-              "pv_current_power_sensor": "Aktuelle PV-Leistung (optional)",
-              "pv_size_kwp": "PV-Anlagengroesse (kWp)",
-              "inverter_limit_w": "Wechselrichterlimit (optional)",
-              "forecast_today_sensor": "Tagesprognose heute (kWh)",
-              "forecast_high_threshold_kwh_per_kwp": "High-Modus ab (kWh/kWp)",
-              "forecast_next_hour_sensor": "Prognose naechste Stunde (optional)",
-              "forecast_remaining_today_sensor": "Restprognose heute (optional)"
-            }
-          },
-          "battery_options": {
-            "name": "Akku",
-            "data": {
-              "battery_soc_sensor": "Akku-Ladestand (optional)",
-              "battery_power_sensor": "Akku-Leistung (optional)",
-              "battery_power_direction": "Vorzeichen der Akku-Leistung",
-              "battery_capacity_kwh": "Akku-Kapazitaet (optional)",
-              "battery_mode": "Akku-Modus",
-              "min_battery_soc": "Mindest-Akkustand"
-            }
-          },
-          "control_options": {
-            "name": "Steuerung",
-            "description": "Debug ist fuer Fehlersuche gedacht. Wenn aktiv, wird ein Debug-Sensor angelegt und eine Entscheidungsdatei im Home-Assistant-Konfigurationsordner geschrieben.",
-            "data": {
-              "debug_sensor_enabled": "Debug-Sensor anzeigen",
-              "min_runtime_grid_override": "Low-Mindestlaufzeit darf Netzlimit uebersteuern"
-            },
-            "data_description": {
-              "debug_sensor_enabled": "Schreibt Entscheidungswechsel mit Sensorwerten in /config/solar_load_controller_decisions.jsonl. Der genaue Pfad steht im Debug-Sensor unter debug_log.path."
-            }
-          }
+          "min_daily_runtime_minutes": "Garantierte Laufzeit für den Tag. Wenn PV nicht reicht, kann der Low-Modus das später trotzdem noch erzwingen.",
+          "min_on_minutes": "Verhindert schnelles Aus- und Einschalten, nachdem der Verbraucher gestartet wurde.",
+          "min_off_minutes": "Verhindert einen sofortigen Neustart, nachdem der Verbraucher gestoppt wurde."
         }
       },
       "energy": {
-        "title": "Optionen: 2/3 Energie und Prognose",
-        "description": "Passe Netzsensoren, PV-Anlagendaten und Forecast-Sensoren an.",
+        "title": "Optionen: 3/5 Netz und Prognose",
+        "description": "Passe die Live-Netzsensoren und die Prognose-Eingänge an. Diese Seite steuert die Low/High-Einstufung und den tolerierten Netzbezug im Low-Modus.",
         "data": {
           "grid_import_sensor": "Netzbezug (positiv)",
           "grid_export_sensor": "Netzeinspeisung (positiv)",
-          "grid_import_limit_w": "Max. Netzbezug im Low-Modus",
+          "grid_import_limit_w": "Netzlimit im Low-Modus",
           "pv_current_power_sensor": "Aktuelle PV-Leistung (optional)",
-          "pv_size_kwp": "PV-Anlagengroesse (kWp)",
+          "pv_size_kwp": "PV-Anlagengröße (kWp)",
           "inverter_limit_w": "Wechselrichterlimit (optional)",
           "forecast_today_sensor": "Tagesprognose heute (kWh)",
           "forecast_high_threshold_kwh_per_kwp": "High-Modus ab (kWh/kWp)",
-          "forecast_next_hour_sensor": "Prognose naechste Stunde (optional)",
+          "forecast_next_hour_sensor": "Prognose nächste Stunde (optional)",
           "forecast_remaining_today_sensor": "Restprognose heute (optional)"
         },
-        "sections": {
-          "grid_options": {
-            "name": "Netz",
-            "description": "Beide Sensoren muessen positive Wattwerte liefern.",
-            "data": {
-              "grid_import_sensor": "Netzbezug (positiv)",
-              "grid_export_sensor": "Netzeinspeisung (positiv)",
-              "grid_import_limit_w": "Max. Netzbezug im Low-Modus"
-            }
-          },
-          "pv_options": {
-            "name": "PV und Prognose",
-            "description": "Die Tagesprognose bestimmt, ob der Tag als Low oder High bewertet wird.",
-            "data": {
-              "pv_current_power_sensor": "Aktuelle PV-Leistung (optional)",
-              "pv_size_kwp": "PV-Anlagengroesse (kWp)",
-              "inverter_limit_w": "Wechselrichterlimit (optional)",
-              "forecast_today_sensor": "Tagesprognose heute (kWh)",
-              "forecast_high_threshold_kwh_per_kwp": "High-Modus ab (kWh/kWp)",
-              "forecast_next_hour_sensor": "Prognose naechste Stunde (optional)",
-              "forecast_remaining_today_sensor": "Restprognose heute (optional)"
-            }
-          }
+        "data_description": {
+          "grid_import_limit_w": "Maximaler Netzbezug, der im Low-Modus erlaubt ist, bevor der Verbraucher blockiert oder gestoppt wird. Im High-Modus gilt eine deutlich strengere Import-Regel.",
+          "forecast_high_threshold_kwh_per_kwp": "Wenn die Tagesprognose pro kWp diesen Wert erreicht, wird der Tag als High-Modus behandelt.",
+          "forecast_next_hour_sensor": "Verbessert kurzfristige Entscheidungen, zum Beispiel Warten oder spätere Neustarts.",
+          "forecast_remaining_today_sensor": "Verbessert die Berechnung, wie viel Energie für den Rest des Tages noch erwartet wird."
         }
       },
-      "advanced": {
-        "title": "Optionen: 3/3 Akku und Diagnose",
-        "description": "Passe optionale Akku-Informationen und Debug-Verhalten an.",
+      "battery": {
+        "title": "Optionen: 4/5 Akku",
+        "description": "Passe optionale Akku-Eingänge und Grenzwerte an. Diese Werte helfen der Logik zu entscheiden, ob die Restprognose zuerst in den Akku gehen sollte.",
         "data": {
           "battery_soc_sensor": "Akku-Ladestand (optional)",
           "battery_power_sensor": "Akku-Leistung (optional)",
           "battery_power_direction": "Vorzeichen der Akku-Leistung",
-          "battery_capacity_kwh": "Akku-Kapazitaet (optional)",
+          "battery_capacity_kwh": "Akku-Kapazität (optional)",
           "battery_mode": "Akku-Modus",
           "min_battery_soc": "Mindest-Akkustand",
-          "debug_sensor_enabled": "Debug-Sensor und Datei aktivieren",
-          "min_runtime_grid_override": "Low-Mindestlaufzeit darf Netzlimit uebersteuern"
+          "high_mode_base_household_load_w": "High-Grundverbrauch Haushalt",
+          "high_mode_household_reserve_margin_percent": "High-Reserveaufschlag Haushalt"
         },
         "data_description": {
-          "debug_sensor_enabled": "Legt den Decision-Debug-Sensor an und schreibt bei jeder geaenderten Entscheidung eine JSONL-Zeile in /config/solar_load_controller_decisions.jsonl. Den genauen Pfad zeigt der Debug-Sensor im Attribut debug_log.path. Aufbewahrung: 7 Tage oder maximal 2000 Eintraege."
+          "battery_power_direction": "Lege fest, wie sich der rohe Akku-Leistungssensor verhält. Intern normiert die Integration den Wert so, dass positiv Laden bedeutet.",
+          "battery_mode": "Wähle, ob die Integration den Akku vorsichtiger schützen oder ihn bei Bedarf aktiv verwenden soll.",
+          "min_battery_soc": "Im Modus Akku verwenden vermeidet die Integration erzwungene Akku-Nutzung unterhalb dieser SOC-Grenze.",
+          "high_mode_base_household_load_w": "Wird nur auf High-Tagen verwendet, nachdem die tägliche Mindestlaufzeit bereits erreicht ist. Das ist der erwartete laufende Grundverbrauch des Haushalts, der vor optionaler weiterer Laufzeit aus der Restprognose reserviert werden soll.",
+          "high_mode_household_reserve_margin_percent": "Zusätzlicher Sicherheitsaufschlag auf den Grundverbrauch, um schwankende spätere Haushaltslasten abzufangen."
+        }
+      },
+      "advanced": {
+        "title": "Optionen: 5/5 Diagnose und Fallback",
+        "description": "Passe Debug-Ausgabe und das Low-Fallback-Verhalten an, das die Mindestlaufzeit garantiert.",
+        "data": {
+          "debug_sensor_enabled": "Debug-Sensor und Datei aktivieren",
+          "min_runtime_grid_override": "Low-Mindestlaufzeit darf Netzlimit übersteuern"
         },
-        "sections": {
-          "battery_options": {
-            "name": "Akku",
-            "data": {
-              "battery_soc_sensor": "Akku-Ladestand (optional)",
-              "battery_power_sensor": "Akku-Leistung (optional)",
-              "battery_power_direction": "Vorzeichen der Akku-Leistung",
-              "battery_capacity_kwh": "Akku-Kapazitaet (optional)",
-              "battery_mode": "Akku-Modus",
-              "min_battery_soc": "Mindest-Akkustand"
-            }
-          },
-          "control_options": {
-            "name": "Diagnose und Low-Modus",
-            "description": "Debug ist fuer Fehlersuche gedacht. Wenn aktiv, wird eine Entscheidungsdatei im Home-Assistant-Konfigurationsordner geschrieben.",
-            "data": {
-              "debug_sensor_enabled": "Debug-Sensor und Datei aktivieren",
-              "min_runtime_grid_override": "Low-Mindestlaufzeit darf Netzlimit uebersteuern"
-            },
-            "data_description": {
-              "debug_sensor_enabled": "Schreibt Entscheidungswechsel mit Sensorwerten in /config/solar_load_controller_decisions.jsonl. Der genaue Pfad steht im Debug-Sensor unter debug_log.path."
-            }
-          }
+        "data_description": {
+          "debug_sensor_enabled": "Legt den Decision Debug Sensor an und schreibt bei jeder geänderten Entscheidung eine JSONL-Zeile in /config/solar_load_controller_decisions.jsonl. Den genauen Pfad zeigt der Debug-Sensor im Attribut debug_log.path. Aufbewahrung: 7 Tage oder maximal 2000 Einträge.",
+          "min_runtime_grid_override": "Wenn aktiv, darf der Low-Modus den Verbraucher trotzdem starten, um die tägliche Mindestlaufzeit zu erreichen, auch wenn das normale Low-Netzlimit den Start blockieren würde."
         }
       }
     }
@@ -389,47 +192,70 @@
   "entity": {
     "sensor": {
       "available_surplus": {
-        "name": "Available surplus"
+        "name": "Verfügbarer Überschuss"
       },
       "decision_reason": {
-        "name": "Decision reason"
+        "name": "Entscheidungsgrund",
+        "state": {
+          "solar": "Solar",
+          "export_guard": "Export Schutz",
+          "forecast_run": "Prognose Lauf",
+          "forecast": "Prognose Warten",
+          "grid_import": "Netzlimit",
+          "battery": "Akku Schutz",
+          "battery_priority": "Akku Priorität",
+          "runtime_force": "Laufzeit Erzwingen",
+          "runtime_met": "Laufzeit Erreicht",
+          "paused": "Pausiert",
+          "waiting": "Bereit",
+          "missing_sensor": "Sensor Fehlt",
+          "min_on": "Min An",
+          "min_off": "Min Aus",
+          "time_window": "Zeitfenster"
+        }
       },
       "decision_debug": {
-        "name": "Decision debug"
+        "name": "Decision Debug"
       },
       "energy_today": {
-        "name": "Energy today"
+        "name": "Energie heute"
       },
       "effective_solar_surplus": {
-        "name": "Effective solar surplus"
+        "name": "Effektiver Solarüberschuss"
       },
       "forced_runtime_today": {
-        "name": "Forced runtime today"
+        "name": "Erzwungene Laufzeit heute"
       },
       "forecast_day_mode": {
-        "name": "Forecast day mode"
+        "name": "Prognose Tagesmodus",
+        "state": {
+          "auto": "Auto",
+          "low": "Low",
+          "high": "High",
+          "unknown": "Unbekannt"
+        }
       },
       "runtime_remaining_today": {
-        "name": "Runtime remaining today"
+        "name": "Verbleibende Laufzeit heute"
       },
       "runtime_today": {
-        "name": "Runtime today"
+        "name": "Laufzeit heute"
       },
       "solar_runtime_today": {
-        "name": "Solar runtime today"
+        "name": "Solar Laufzeit heute"
       },
       "switch_cycles_today": {
-        "name": "Automatic switch cycles today"
+        "name": "Automatische Schaltzyklen heute"
       }
     },
     "switch": {
       "automation_paused": {
-        "name": "Automation paused"
+        "name": "Automatik pausiert"
       }
     },
     "select": {
       "forecast_day_mode_override": {
-        "name": "Forecast day mode override"
+        "name": "Prognose Tagesmodus überschreiben"
       }
     }
   }

@@ -13,8 +13,55 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from .const import CONF_DEBUG_SENSOR_ENABLED, DATA_CONTROLLER, DOMAIN
+from .const import (
+    CONF_DEBUG_SENSOR_ENABLED,
+    DATA_CONTROLLER,
+    DECISION_AUTOMATION_PAUSED,
+    DECISION_BATTERY_PROTECTED,
+    DECISION_BATTERY_PRIORITY,
+    DECISION_EXPORT_GUARD,
+    DECISION_FORECAST_ASSISTED_RUN,
+    DECISION_FORECAST_WAIT,
+    DECISION_GRID_IMPORT_LIMIT_EXCEEDED,
+    DECISION_MINIMUM_OFF_TIME_ACTIVE,
+    DECISION_MINIMUM_ON_TIME_ACTIVE,
+    DECISION_MINIMUM_RUNTIME_REACHED,
+    DECISION_MINIMUM_RUNTIME_REQUIRED,
+    DECISION_MISSING_REQUIRED_SENSOR,
+    DECISION_SOLAR_SURPLUS_AVAILABLE,
+    DECISION_TIME_WINDOW_BLOCKED,
+    DECISION_WAITING_FOR_SURPLUS,
+    DOMAIN,
+    FORECAST_DAY_MODE_AUTO,
+    FORECAST_DAY_MODE_HIGH,
+    FORECAST_DAY_MODE_LOW,
+)
 from .coordinator import SolarLoadController, today
+
+DECISION_REASON_OPTIONS = [
+    DECISION_SOLAR_SURPLUS_AVAILABLE,
+    DECISION_EXPORT_GUARD,
+    DECISION_FORECAST_ASSISTED_RUN,
+    DECISION_FORECAST_WAIT,
+    DECISION_GRID_IMPORT_LIMIT_EXCEEDED,
+    DECISION_BATTERY_PROTECTED,
+    DECISION_BATTERY_PRIORITY,
+    DECISION_MINIMUM_RUNTIME_REQUIRED,
+    DECISION_MINIMUM_RUNTIME_REACHED,
+    DECISION_AUTOMATION_PAUSED,
+    DECISION_WAITING_FOR_SURPLUS,
+    DECISION_MISSING_REQUIRED_SENSOR,
+    DECISION_MINIMUM_ON_TIME_ACTIVE,
+    DECISION_MINIMUM_OFF_TIME_ACTIVE,
+    DECISION_TIME_WINDOW_BLOCKED,
+]
+
+FORECAST_DAY_MODE_SENSOR_OPTIONS = [
+    FORECAST_DAY_MODE_AUTO,
+    FORECAST_DAY_MODE_LOW,
+    FORECAST_DAY_MODE_HIGH,
+    "unknown",
+]
 
 
 async def async_setup_entry(
@@ -248,15 +295,21 @@ class SolarLoadEffectiveSolarSurplusSensor(SolarLoadBaseSensor):
         return {
             "available_surplus_w": self.controller.available_surplus_w,
             "battery_charge_w": max(0.0, self.controller.battery_power_w or 0.0),
+            "usable_battery_charge_w": self.controller.usable_battery_charge_w,
+            "pv_current_power_w": self.controller.pv_current_power_w,
+            "inverter_limit_w": self.controller.inverter_limit_w,
             "active_load_w": (
                 self.controller.load_power_w if self.controller.is_load_on else 0.0
             ),
-            "formula": "available_surplus + battery_charge + active_load",
+            "formula": "available_surplus + usable_battery_charge + active_load",
         }
 
 
 class SolarLoadForecastDayModeSensor(SolarLoadBaseSensor):
     """Sensor that exposes the active forecast day mode."""
+
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = FORECAST_DAY_MODE_SENSOR_OPTIONS
 
     def __init__(self, controller: SolarLoadController) -> None:
         """Initialize the sensor."""
@@ -284,6 +337,9 @@ class SolarLoadForecastDayModeSensor(SolarLoadBaseSensor):
 
 class SolarLoadDecisionReasonSensor(SolarLoadBaseSensor):
     """Sensor that exposes the current short decision reason."""
+
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = DECISION_REASON_OPTIONS
 
     def __init__(self, controller: SolarLoadController) -> None:
         """Initialize the sensor."""
@@ -334,6 +390,24 @@ class SolarLoadDecisionReasonSensor(SolarLoadBaseSensor):
             "battery_power_state": self.controller.battery_power_state,
             "battery_mode": self.controller.battery_mode,
             "battery_headroom_kwh": self.controller.battery_headroom_kwh,
+            "battery_charge_required_kwh": (
+                self.controller.battery_charge_required_kwh
+            ),
+            "high_forecast_post_runtime_battery_charge_required_kwh": (
+                self.controller.high_forecast_post_runtime_battery_charge_required_kwh
+            ),
+            "high_mode_base_household_load_w": (
+                self.controller.high_mode_base_household_load_w
+            ),
+            "high_mode_household_reserve_margin_percent": (
+                self.controller.high_mode_household_reserve_margin_percent
+            ),
+            "high_mode_household_reserve_kwh": (
+                self.controller.high_mode_household_reserve_kwh
+            ),
+            "high_mode_time_priority_buffer_kwh": (
+                self.controller.high_mode_time_priority_buffer_kwh
+            ),
             "forecast_excess_after_battery_kwh": (
                 self.controller.forecast_excess_after_battery_kwh
             ),
@@ -366,12 +440,14 @@ class SolarLoadDecisionDebugSensor(SolarLoadBaseSensor):
 
     @property
     def native_value(self) -> str:
-        """Return current decision summary."""
+        """Return the current debug summary."""
         return self.controller.decision_debug_summary
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return detailed decision trace attributes."""
         attributes = self.controller.decision_debug
+        attributes["reason_key"] = self.controller.decision.reason
+        attributes["summary"] = self.controller.decision_debug_summary
         attributes["debug_log"] = self.controller.decision_debug_log_info
         return attributes
