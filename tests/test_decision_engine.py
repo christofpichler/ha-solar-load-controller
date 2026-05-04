@@ -24,6 +24,7 @@ solar_load_controller.__path__ = [str(PACKAGE_DIR)]
 setattr(custom_components, "solar_load_controller", solar_load_controller)
 
 from custom_components.solar_load_controller.const import (
+    DECISION_BATTERY_PRIORITY,
     DECISION_EXPORT_GUARD,
     DECISION_FORECAST_WAIT,
     DECISION_GRID_IMPORT_LIMIT_EXCEEDED,
@@ -69,6 +70,7 @@ def make_inputs(**overrides: object) -> DecisionInputs:
         min_off_active=False,
         min_off_remaining_minutes=0.0,
         export_guard_run_available=False,
+        battery_priority_after_runtime=False,
         battery_headroom_kwh=4.0,
         battery_charge_required_kwh=4.444,
         high_forecast_post_runtime_battery_charge_required_kwh=4.2,
@@ -149,6 +151,7 @@ class DecisionEngineTest(unittest.TestCase):
                 is_load_on=True,
                 runtime_remaining_minutes=0.0,
                 export_guard_run_available=False,
+                battery_priority_after_runtime=False,
                 available_surplus_w=0.0,
                 effective_solar_surplus_w=400.0,
                 forecast_excess_after_battery_kwh=3.0,
@@ -157,6 +160,23 @@ class DecisionEngineTest(unittest.TestCase):
 
         self.assertFalse(result.should_run)
         self.assertEqual(result.reason, DECISION_MINIMUM_RUNTIME_REACHED)
+
+    def test_battery_priority_replaces_runtime_met_after_runtime(self) -> None:
+        """High-mode battery reservation should expose its own reason after runtime is met."""
+        result = evaluate_decision(
+            make_inputs(
+                runtime_remaining_minutes=0.0,
+                battery_priority_after_runtime=True,
+                export_guard_run_available=False,
+            )
+        )
+
+        self.assertFalse(result.should_run)
+        self.assertEqual(result.reason, DECISION_BATTERY_PRIORITY)
+        self.assertEqual(
+            result.summary,
+            "battery_priority: reserving forecast for battery",
+        )
 
     def test_high_forecast_grid_import_turns_running_load_off(self) -> None:
         """High forecast mode should stop after min_on when grid import starts."""

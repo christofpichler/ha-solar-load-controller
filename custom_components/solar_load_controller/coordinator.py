@@ -800,6 +800,9 @@ class SolarLoadController:
             export_guard_run_available=(
                 self._export_guard_run_available
             ),
+            battery_priority_after_runtime=(
+                self._should_prioritize_battery_after_runtime()
+            ),
             battery_headroom_kwh=self.battery_headroom_kwh,
             battery_charge_required_kwh=self.battery_charge_required_kwh,
             high_forecast_post_runtime_battery_charge_required_kwh=(

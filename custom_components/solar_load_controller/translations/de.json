@@ -203,6 +203,7 @@
           "forecast": "Prognose Warten",
           "grid_import": "Netzlimit",
           "battery": "Akku Schutz",
+          "battery_priority": "Akku Priorität",
           "runtime_force": "Laufzeit Erzwingen",
           "runtime_met": "Laufzeit Erreicht",
           "paused": "Pausiert",

@@ -203,6 +203,7 @@
           "forecast": "Forecast Wait",
           "grid_import": "Grid Limit",
           "battery": "Battery Guard",
+          "battery_priority": "Battery Priority",
           "runtime_force": "Runtime Force",
           "runtime_met": "Runtime Met",
           "paused": "Paused",

@@ -8,6 +8,7 @@ from typing import Any
 from .const import (
     DECISION_AUTOMATION_PAUSED,
     DECISION_BATTERY_PROTECTED,
+    DECISION_BATTERY_PRIORITY,
     DECISION_EXPORT_GUARD,
     DECISION_FORECAST_ASSISTED_RUN,
     DECISION_FORECAST_WAIT,
@@ -62,6 +63,7 @@ class DecisionInputs:
     min_off_active: bool
     min_off_remaining_minutes: float
     export_guard_run_available: bool
+    battery_priority_after_runtime: bool
     battery_headroom_kwh: float | None
     battery_charge_required_kwh: float | None
     high_forecast_post_runtime_battery_charge_required_kwh: float | None
@@ -161,6 +163,9 @@ def evaluate_decision(inputs: DecisionInputs) -> DecisionResult:
     elif inputs.export_guard_run_available:
         should_run = True
         reason = DECISION_EXPORT_GUARD
+    elif inputs.battery_priority_after_runtime:
+        should_run = False
+        reason = DECISION_BATTERY_PRIORITY
     elif inputs.runtime_remaining_minutes <= 0:
         should_run = False
         reason = DECISION_MINIMUM_RUNTIME_REACHED
@@ -244,6 +249,10 @@ def _build_checks(inputs: DecisionInputs) -> tuple[DecisionCheck, ...]:
         ),
         DecisionCheck("runtime_remaining", inputs.runtime_remaining_minutes > 0),
         DecisionCheck(
+            "battery_priority_after_runtime",
+            not inputs.battery_priority_after_runtime,
+        ),
+        DecisionCheck(
             "export_guard",
             inputs.export_guard_run_available,
         ),
@@ -292,6 +301,8 @@ def _build_summary(inputs: DecisionInputs, should_run: bool, reason: str) -> str
         return "grid_import: projected import above start limit"
     if reason == DECISION_BATTERY_PROTECTED:
         return "battery: protected"
+    if reason == DECISION_BATTERY_PRIORITY:
+        return "battery_priority: reserving forecast for battery"
     if reason == DECISION_MINIMUM_RUNTIME_REQUIRED:
         if inputs.min_off_active:
             return "runtime_force: minimum runtime overrides min_off"
