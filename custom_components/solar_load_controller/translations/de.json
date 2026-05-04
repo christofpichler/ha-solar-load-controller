@@ -58,12 +58,16 @@
           "battery_power_direction": "Vorzeichen der Akku-Leistung",
           "battery_capacity_kwh": "Akku-Kapazität (optional)",
           "battery_mode": "Akku-Modus",
-          "min_battery_soc": "Mindest-Akkustand"
+          "min_battery_soc": "Mindest-Akkustand",
+          "high_mode_base_household_load_w": "High-Grundverbrauch Haushalt",
+          "high_mode_household_reserve_margin_percent": "High-Reserveaufschlag Haushalt"
         },
         "data_description": {
           "battery_power_direction": "Lege fest, wie sich der rohe Akku-Leistungssensor verhält. Intern normiert die Integration den Wert so, dass positiv Laden bedeutet.",
           "battery_mode": "Wähle, ob die Integration den Akku vorsichtiger schützen oder ihn bei Bedarf aktiv verwenden soll.",
-          "min_battery_soc": "Im Modus Akku verwenden vermeidet die Integration erzwungene Akku-Nutzung unterhalb dieser SOC-Grenze."
+          "min_battery_soc": "Im Modus Akku verwenden vermeidet die Integration erzwungene Akku-Nutzung unterhalb dieser SOC-Grenze.",
+          "high_mode_base_household_load_w": "Wird nur auf High-Tagen verwendet, nachdem die tägliche Mindestlaufzeit bereits erreicht ist. Das ist der erwartete laufende Grundverbrauch des Haushalts, der vor optionaler weiterer Laufzeit aus der Restprognose reserviert werden soll.",
+          "high_mode_household_reserve_margin_percent": "Zusätzlicher Sicherheitsaufschlag auf den Grundverbrauch, um schwankende spätere Haushaltslasten abzufangen."
         }
       },
       "advanced": {
@@ -138,12 +142,16 @@
           "battery_power_direction": "Vorzeichen der Akku-Leistung",
           "battery_capacity_kwh": "Akku-Kapazität (optional)",
           "battery_mode": "Akku-Modus",
-          "min_battery_soc": "Mindest-Akkustand"
+          "min_battery_soc": "Mindest-Akkustand",
+          "high_mode_base_household_load_w": "High-Grundverbrauch Haushalt",
+          "high_mode_household_reserve_margin_percent": "High-Reserveaufschlag Haushalt"
         },
         "data_description": {
           "battery_power_direction": "Lege fest, wie sich der rohe Akku-Leistungssensor verhält. Intern normiert die Integration den Wert so, dass positiv Laden bedeutet.",
           "battery_mode": "Wähle, ob die Integration den Akku vorsichtiger schützen oder ihn bei Bedarf aktiv verwenden soll.",
-          "min_battery_soc": "Im Modus Akku verwenden vermeidet die Integration erzwungene Akku-Nutzung unterhalb dieser SOC-Grenze."
+          "min_battery_soc": "Im Modus Akku verwenden vermeidet die Integration erzwungene Akku-Nutzung unterhalb dieser SOC-Grenze.",
+          "high_mode_base_household_load_w": "Wird nur auf High-Tagen verwendet, nachdem die tägliche Mindestlaufzeit bereits erreicht ist. Das ist der erwartete laufende Grundverbrauch des Haushalts, der vor optionaler weiterer Laufzeit aus der Restprognose reserviert werden soll.",
+          "high_mode_household_reserve_margin_percent": "Zusätzlicher Sicherheitsaufschlag auf den Grundverbrauch, um schwankende spätere Haushaltslasten abzufangen."
         }
       },
       "advanced": {

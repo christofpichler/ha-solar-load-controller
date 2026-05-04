@@ -22,7 +22,11 @@ solar_load_controller = sys.modules.setdefault(
 solar_load_controller.__path__ = [str(PACKAGE_DIR)]
 setattr(custom_components, "solar_load_controller", solar_load_controller)
 
-from custom_components.solar_load_controller.energy import required_input_energy
+from custom_components.solar_load_controller.energy import (
+    household_energy_reserve_kwh,
+    required_input_energy,
+    usable_battery_charge_for_ac_surplus,
+)
 
 
 class EnergyHelperTest(unittest.TestCase):
@@ -35,6 +39,24 @@ class EnergyHelperTest(unittest.TestCase):
     def test_required_input_energy_handles_zero_storage(self) -> None:
         """Zero storage target should require zero input energy."""
         self.assertEqual(required_input_energy(0.0, 0.9), 0.0)
+
+    def test_battery_charge_above_inverter_limit_does_not_count(self) -> None:
+        """Clipped PV above the inverter limit should not count as AC surplus."""
+        self.assertEqual(
+            usable_battery_charge_for_ac_surplus(462.0, 1449.0, 1000.0),
+            13.0,
+        )
+
+    def test_battery_charge_counts_normally_below_inverter_limit(self) -> None:
+        """Battery charging may still count when PV is below the AC limit."""
+        self.assertEqual(
+            usable_battery_charge_for_ac_surplus(300.0, 900.0, 1000.0),
+            300.0,
+        )
+
+    def test_household_reserve_accounts_for_margin_and_time(self) -> None:
+        """Household reserve should include the configured margin and remaining hours."""
+        self.assertEqual(household_energy_reserve_kwh(250.0, 20.0, 8.0), 2.4)
 
 
 if __name__ == "__main__":

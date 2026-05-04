@@ -35,6 +35,9 @@ from .const import (
     CONF_GRID_EXPORT_SENSOR,
     CONF_GRID_IMPORT_LIMIT_W,
     CONF_GRID_IMPORT_SENSOR,
+    CONF_HIGH_MODE_BASE_HOUSEHOLD_LOAD_W,
+    CONF_HIGH_MODE_HOUSEHOLD_RESERVE_MARGIN_PERCENT,
+    CONF_INVERTER_LIMIT_W,
     CONF_EARLIEST_START_TIME,
     CONF_LATEST_FINISH_TIME,
     CONF_LOAD_POWER_W,
@@ -57,6 +60,8 @@ from .const import (
     DEFAULT_FORECAST_HIGH_THRESHOLD_KWH_PER_KWP,
     DEFAULT_FORECAST_WAIT_MINUTES,
     DEFAULT_GRID_IMPORT_LIMIT_W,
+    DEFAULT_HIGH_MODE_BASE_HOUSEHOLD_LOAD_W,
+    DEFAULT_HIGH_MODE_HOUSEHOLD_RESERVE_MARGIN_PERCENT,
     DEFAULT_LATEST_FINISH_TIME,
     DEFAULT_LOAD_POWER_W,
     DEFAULT_MIN_DAILY_RUNTIME_MINUTES,
@@ -67,12 +72,16 @@ from .const import (
     FORECAST_DAY_MODE_LOW,
 )
 from .decision_engine import DecisionInputs, DecisionResult, evaluate_decision
-from .energy import required_input_energy
+from .energy import (
+    household_energy_reserve_kwh,
+    required_input_energy,
+    usable_battery_charge_for_ac_surplus,
+)
 from .high_mode import allow_post_runtime_export_guard_restart
 
 _LOGGER = logging.getLogger(__name__)
 
-GRID_IMPORT_RESTART_COOLDOWN = timedelta(minutes=10)
+GRID_IMPORT_RESTART_COOLDOWN = timedelta(seconds=0)
 GRID_IMPORT_SHUTDOWN_DELAY = timedelta(seconds=15)
 GRID_IMPORT_START_MARGIN_W = 50
 HIGH_FORECAST_CURTAILMENT_HEADROOM_RATIO = 0.8
@@ -82,6 +91,7 @@ HIGH_FORECAST_POST_RUNTIME_BATTERY_TARGET_SOC = 99
 HIGH_FORECAST_POST_RUNTIME_BATTERY_HEADROOM_KWH = 0.05
 HIGH_FORECAST_POST_RUNTIME_RESTART_SURPLUS_MARGIN_W = 75
 HIGH_FORECAST_POST_RUNTIME_NEXT_HOUR_RATIO = 1.5
+HIGH_FORECAST_POST_RUNTIME_PRIORITY_BUFFER_KWH = 1.0
 LOW_FORECAST_RUNTIME_DEADLINE_RATIO = 0.5
 PENDING_LOAD_STATE_TIMEOUT = timedelta(seconds=30)
 DEBUG_DECISION_LOG_FILENAME = "solar_load_controller_decisions.jsonl"
@@ -305,9 +315,18 @@ class SolarLoadController:
     @property
     def effective_solar_surplus_w(self) -> float:
         """Return export plus battery charge power that can feed the load."""
-        battery_charge_w = max(0.0, self.battery_power_w or 0.0)
+        battery_charge_w = self.usable_battery_charge_w
         active_load_w = self.load_power_w if self.is_load_on else 0.0
         return round(self.available_surplus_w + battery_charge_w + active_load_w, 1)
+
+    @property
+    def usable_battery_charge_w(self) -> float:
+        """Return battery charge power that is usable for AC surplus decisions."""
+        return usable_battery_charge_for_ac_surplus(
+            max(0.0, self.battery_power_w or 0.0),
+            self.pv_current_power_w,
+            self.inverter_limit_w,
+        )
 
     @property
     def grid_export_w(self) -> float | None:
@@ -318,6 +337,41 @@ class SolarLoadController:
     def grid_import_w(self) -> float | None:
         """Return current grid import in watts."""
         return self._positive_state_value(self.config.get(CONF_GRID_IMPORT_SENSOR))
+
+    @property
+    def pv_current_power_w(self) -> float | None:
+        """Return current PV production in watts."""
+        return self._positive_state_value(self.config.get(CONF_PV_CURRENT_POWER_SENSOR))
+
+    @property
+    def inverter_limit_w(self) -> float | None:
+        """Return configured AC inverter limit in watts, if any."""
+        return _as_float(self.config.get(CONF_INVERTER_LIMIT_W))
+
+    @property
+    def high_mode_base_household_load_w(self) -> float:
+        """Return configured expected household base load for late-day reserve."""
+        return _as_float(
+            self.config.get(CONF_HIGH_MODE_BASE_HOUSEHOLD_LOAD_W),
+            DEFAULT_HIGH_MODE_BASE_HOUSEHOLD_LOAD_W,
+        )
+
+    @property
+    def high_mode_household_reserve_margin_percent(self) -> float:
+        """Return configured margin on top of the household base load."""
+        return _as_float(
+            self.config.get(CONF_HIGH_MODE_HOUSEHOLD_RESERVE_MARGIN_PERCENT),
+            DEFAULT_HIGH_MODE_HOUSEHOLD_RESERVE_MARGIN_PERCENT,
+        )
+
+    @property
+    def high_mode_household_reserve_kwh(self) -> float:
+        """Return forecast reserve for remaining household consumption today."""
+        return household_energy_reserve_kwh(
+            self.high_mode_base_household_load_w,
+            self.high_mode_household_reserve_margin_percent,
+            max(0.0, self.minutes_until_finish) / 60,
+        )
 
     @property
     def grid_import_limit_w(self) -> float:
@@ -726,6 +780,15 @@ class SolarLoadController:
             high_forecast_post_runtime_battery_charge_required_kwh=(
                 self.high_forecast_post_runtime_battery_charge_required_kwh
             ),
+            high_mode_base_household_load_w=(
+                self.high_mode_base_household_load_w
+            ),
+            high_mode_household_reserve_margin_percent=(
+                self.high_mode_household_reserve_margin_percent
+            ),
+            high_mode_household_reserve_kwh=(
+                self.high_mode_household_reserve_kwh
+            ),
             forecast_excess_after_battery_kwh=(
                 self.forecast_excess_after_battery_kwh
             ),
@@ -958,6 +1021,15 @@ class SolarLoadController:
                 ),
                 "high_forecast_post_runtime_next_hour_ratio": (
                     HIGH_FORECAST_POST_RUNTIME_NEXT_HOUR_RATIO
+                ),
+                "high_forecast_post_runtime_priority_buffer_kwh": (
+                    HIGH_FORECAST_POST_RUNTIME_PRIORITY_BUFFER_KWH
+                ),
+                "high_mode_base_household_load_w": (
+                    self.high_mode_base_household_load_w
+                ),
+                "high_mode_household_reserve_margin_percent": (
+                    self.high_mode_household_reserve_margin_percent
                 ),
                 "min_runtime_grid_override": self.min_runtime_grid_override,
                 "forecast_day_mode_override": self.forecast_day_mode_override,
@@ -1395,12 +1467,12 @@ class SolarLoadController:
         ):
             return True
 
-        load_buffer_kwh = (
-            self.load_power_w * DEFAULT_FORECAST_WAIT_MINUTES / 60 / 1000
-        )
+        household_reserve_kwh = self.high_mode_household_reserve_kwh
         return (
             forecast_remaining_kwh
-            < battery_charge_required_kwh + load_buffer_kwh
+            < battery_charge_required_kwh
+            + household_reserve_kwh
+            + HIGH_FORECAST_POST_RUNTIME_PRIORITY_BUFFER_KWH
         )
 
     def _allow_post_runtime_export_guard_restart(self) -> bool:

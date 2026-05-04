@@ -58,12 +58,16 @@
           "battery_power_direction": "Battery power sign",
           "battery_capacity_kwh": "Battery capacity (optional)",
           "battery_mode": "Battery mode",
-          "min_battery_soc": "Minimum battery SOC"
+          "min_battery_soc": "Minimum battery SOC",
+          "high_mode_base_household_load_w": "High-mode household base load",
+          "high_mode_household_reserve_margin_percent": "High-mode household reserve margin"
         },
         "data_description": {
           "battery_power_direction": "Set how the raw battery power sensor behaves. The integration normalizes it so positive means charging internally.",
           "battery_mode": "Choose whether the controller should protect the battery more conservatively or actively use it when needed.",
-          "min_battery_soc": "In Use mode, the controller will avoid forced battery use below this SOC threshold."
+          "min_battery_soc": "In Use mode, the controller will avoid forced battery use below this SOC threshold.",
+          "high_mode_base_household_load_w": "Used only after the daily minimum runtime is already reached on High days. This is the expected ongoing household base load that should still be reserved from the remaining forecast before optional load runtime is allowed.",
+          "high_mode_household_reserve_margin_percent": "Extra safety margin added on top of the household base load to cover variable late-day loads."
         }
       },
       "advanced": {
@@ -138,12 +142,16 @@
           "battery_power_direction": "Battery power sign",
           "battery_capacity_kwh": "Battery capacity (optional)",
           "battery_mode": "Battery mode",
-          "min_battery_soc": "Minimum battery SOC"
+          "min_battery_soc": "Minimum battery SOC",
+          "high_mode_base_household_load_w": "High-mode household base load",
+          "high_mode_household_reserve_margin_percent": "High-mode household reserve margin"
         },
         "data_description": {
           "battery_power_direction": "Set how the raw battery power sensor behaves. The integration normalizes it so positive means charging internally.",
           "battery_mode": "Choose whether the controller should protect the battery more conservatively or actively use it when needed.",
-          "min_battery_soc": "In Use mode, the controller will avoid forced battery use below this SOC threshold."
+          "min_battery_soc": "In Use mode, the controller will avoid forced battery use below this SOC threshold.",
+          "high_mode_base_household_load_w": "Used only after the daily minimum runtime is already reached on High days. This is the expected ongoing household base load that should still be reserved from the remaining forecast before optional load runtime is allowed.",
+          "high_mode_household_reserve_margin_percent": "Extra safety margin added on top of the household base load to cover variable late-day loads."
         }
       },
       "advanced": {

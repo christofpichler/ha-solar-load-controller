@@ -65,6 +65,9 @@ class DecisionInputs:
     battery_headroom_kwh: float | None
     battery_charge_required_kwh: float | None
     high_forecast_post_runtime_battery_charge_required_kwh: float | None
+    high_mode_base_household_load_w: float
+    high_mode_household_reserve_margin_percent: float
+    high_mode_household_reserve_kwh: float
     forecast_excess_after_battery_kwh: float | None
     forecast_assisted_run_available: bool
     high_forecast_grid_import_active: bool

@@ -31,6 +31,8 @@ from .const import (
     CONF_GRID_EXPORT_SENSOR,
     CONF_GRID_IMPORT_LIMIT_W,
     CONF_GRID_IMPORT_SENSOR,
+    CONF_HIGH_MODE_BASE_HOUSEHOLD_LOAD_W,
+    CONF_HIGH_MODE_HOUSEHOLD_RESERVE_MARGIN_PERCENT,
     CONF_INVERTER_LIMIT_W,
     CONF_LATEST_FINISH_TIME,
     CONF_LOAD_POWER_W,
@@ -48,6 +50,8 @@ from .const import (
     DEFAULT_FORECAST_HIGH_THRESHOLD_KWH_PER_KWP,
     DEFAULT_LATEST_FINISH_TIME,
     DEFAULT_LOAD_POWER_W,
+    DEFAULT_HIGH_MODE_BASE_HOUSEHOLD_LOAD_W,
+    DEFAULT_HIGH_MODE_HOUSEHOLD_RESERVE_MARGIN_PERCENT,
     DEFAULT_MIN_BATTERY_SOC,
     DEFAULT_MIN_DAILY_RUNTIME_MINUTES,
     DEFAULT_MIN_OFF_MINUTES,
@@ -473,6 +477,36 @@ def _battery_schema(defaults: dict[str, Any]) -> dict[Any, Any]:
                 min=0,
                 max=100,
                 step=1,
+                unit_of_measurement="%",
+                mode=selector.NumberSelectorMode.SLIDER,
+            )
+        ),
+        vol.Required(
+            CONF_HIGH_MODE_BASE_HOUSEHOLD_LOAD_W,
+            default=defaults.get(
+                CONF_HIGH_MODE_BASE_HOUSEHOLD_LOAD_W,
+                DEFAULT_HIGH_MODE_BASE_HOUSEHOLD_LOAD_W,
+            ),
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=5000,
+                step=10,
+                unit_of_measurement="W",
+                mode=selector.NumberSelectorMode.BOX,
+            )
+        ),
+        vol.Required(
+            CONF_HIGH_MODE_HOUSEHOLD_RESERVE_MARGIN_PERCENT,
+            default=defaults.get(
+                CONF_HIGH_MODE_HOUSEHOLD_RESERVE_MARGIN_PERCENT,
+                DEFAULT_HIGH_MODE_HOUSEHOLD_RESERVE_MARGIN_PERCENT,
+            ),
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=100,
+                step=5,
                 unit_of_measurement="%",
                 mode=selector.NumberSelectorMode.SLIDER,
             )

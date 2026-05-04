@@ -293,10 +293,13 @@ class SolarLoadEffectiveSolarSurplusSensor(SolarLoadBaseSensor):
         return {
             "available_surplus_w": self.controller.available_surplus_w,
             "battery_charge_w": max(0.0, self.controller.battery_power_w or 0.0),
+            "usable_battery_charge_w": self.controller.usable_battery_charge_w,
+            "pv_current_power_w": self.controller.pv_current_power_w,
+            "inverter_limit_w": self.controller.inverter_limit_w,
             "active_load_w": (
                 self.controller.load_power_w if self.controller.is_load_on else 0.0
             ),
-            "formula": "available_surplus + battery_charge + active_load",
+            "formula": "available_surplus + usable_battery_charge + active_load",
         }
 
 
@@ -391,6 +394,15 @@ class SolarLoadDecisionReasonSensor(SolarLoadBaseSensor):
             "high_forecast_post_runtime_battery_charge_required_kwh": (
                 self.controller.high_forecast_post_runtime_battery_charge_required_kwh
             ),
+            "high_mode_base_household_load_w": (
+                self.controller.high_mode_base_household_load_w
+            ),
+            "high_mode_household_reserve_margin_percent": (
+                self.controller.high_mode_household_reserve_margin_percent
+            ),
+            "high_mode_household_reserve_kwh": (
+                self.controller.high_mode_household_reserve_kwh
+            ),
             "forecast_excess_after_battery_kwh": (
                 self.controller.forecast_excess_after_battery_kwh
             ),
@@ -423,13 +435,14 @@ class SolarLoadDecisionDebugSensor(SolarLoadBaseSensor):
 
     @property
     def native_value(self) -> str:
-        """Return the raw internal decision reason."""
-        return self.controller.decision.reason
+        """Return the current debug summary."""
+        return self.controller.decision_debug_summary
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return detailed decision trace attributes."""
         attributes = self.controller.decision_debug
+        attributes["reason_key"] = self.controller.decision.reason
         attributes["summary"] = self.controller.decision_debug_summary
         attributes["debug_log"] = self.controller.decision_debug_log_info
         return attributes
