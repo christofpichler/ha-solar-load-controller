@@ -219,10 +219,10 @@
         "state": {
           "solar": "Solar",
           "export_guard": "Export Guard",
-          "forecast_run": "Forecast Run",
+          "forecast_run": "Forecast Start",
           "forecast": "Forecast Wait",
-          "low_assist": "Low Assist",
-          "low_wait": "Low Wait",
+          "low_assist": "Solar Support",
+          "low_wait": "Waiting for Solar",
           "grid_import": "Grid Limit",
           "battery": "Battery Guard",
           "battery_priority": "Battery Priority",
