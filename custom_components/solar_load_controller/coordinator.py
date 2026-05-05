@@ -13,6 +13,7 @@ from homeassistant.const import STATE_ON
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.event import (
     async_track_state_change_event,
+    async_track_point_in_time,
     async_track_time_change,
     async_track_time_interval,
 )
@@ -177,6 +178,7 @@ class SolarLoadController:
         self._daily_forecast_kwh_per_kwp: float | None = None
         self._daily_forecast_day_class: str = "unknown"
         self._forecast_day_mode_override = FORECAST_DAY_MODE_AUTO
+        self._runtime_completion_unsubscribe: Callable[[], None] | None = None
 
         self._listeners: set[Callable[[], None]] = set()
         self._unsubscribers: list[Callable[[], None]] = []
@@ -236,11 +238,13 @@ class SolarLoadController:
             self._last_runtime_update = now
             self._last_turned_on_at = now
             self._refresh_active_runtime_reason()
+            self._async_schedule_runtime_completion_check(now)
 
         self.hass.async_create_task(self._async_apply_decision())
 
     def async_stop(self) -> None:
         """Stop tracking changes."""
+        self._async_cancel_runtime_completion_check()
         for unsubscribe in self._unsubscribers:
             unsubscribe()
         self._unsubscribers.clear()
@@ -258,6 +262,9 @@ class SolarLoadController:
         self.automation_paused = paused
         if paused:
             self._runtime_force_latched = False
+            self._async_cancel_runtime_completion_check()
+        elif self.is_load_on:
+            self._async_schedule_runtime_completion_check()
         self._async_notify_listeners()
         self.hass.async_create_task(self._async_apply_decision())
 
@@ -1059,6 +1066,7 @@ class SolarLoadController:
             self._last_runtime_update = now
             self._last_turned_on_at = now
             self._last_grid_import_shutdown_at = None
+            self._async_schedule_runtime_completion_check(now)
             if self._pending_automatic_turn_on:
                 self._active_runtime_reason = self._pending_decision_reason
                 self._async_record_automatic_switch_on()
@@ -1069,6 +1077,7 @@ class SolarLoadController:
             self._last_runtime_update = None
             self._active_runtime_reason = None
             self._last_turned_off_at = dt_util.utcnow()
+            self._async_cancel_runtime_completion_check()
             self._grid_import_over_limit_since = None
             self._high_forecast_grid_import_since = None
             if (
@@ -1089,6 +1098,10 @@ class SolarLoadController:
         """Commit active runtime while the load is running."""
         if self._last_runtime_update is not None:
             self._commit_active_runtime(now)
+        if self.is_load_on:
+            self._async_schedule_runtime_completion_check(now)
+        else:
+            self._async_cancel_runtime_completion_check()
         self._capture_daily_forecast_if_needed()
         self._async_update_grid_import_tracking(now)
         self._refresh_active_runtime_reason()
@@ -1108,8 +1121,10 @@ class SolarLoadController:
             self._last_turned_on_at = self._last_runtime_update
             self._last_turned_off_at = None
             self._refresh_active_runtime_reason()
+            self._async_schedule_runtime_completion_check(now)
         else:
             self._active_runtime_reason = None
+            self._async_cancel_runtime_completion_check()
         self._async_clear_pending_load_state(self.is_load_on)
         self._grid_import_over_limit_since = None
         self._high_forecast_grid_import_since = None
@@ -1119,6 +1134,46 @@ class SolarLoadController:
         self._daily_forecast_today_kwh = None
         self._daily_forecast_kwh_per_kwp = None
         self._daily_forecast_day_class = "unknown"
+        self._async_notify_listeners()
+        self.hass.async_create_task(self._async_apply_decision())
+
+    @callback
+    def _async_cancel_runtime_completion_check(self) -> None:
+        """Cancel the exact runtime completion callback if one exists."""
+        if self._runtime_completion_unsubscribe is not None:
+            self._runtime_completion_unsubscribe()
+            self._runtime_completion_unsubscribe = None
+
+    @callback
+    def _async_schedule_runtime_completion_check(
+        self,
+        now: datetime | None = None,
+    ) -> None:
+        """Schedule an exact callback for the current runtime completion moment."""
+        self._async_cancel_runtime_completion_check()
+        if self.automation_paused or not self.is_load_on:
+            return
+
+        runtime_remaining_minutes = self.runtime_remaining_today_minutes
+        if runtime_remaining_minutes <= 0:
+            return
+
+        now = now or dt_util.utcnow()
+        completion_at = now + timedelta(minutes=runtime_remaining_minutes)
+        self._runtime_completion_unsubscribe = async_track_point_in_time(
+            self.hass,
+            self._async_runtime_completion_check,
+            completion_at,
+        )
+
+    @callback
+    def _async_runtime_completion_check(self, now: datetime) -> None:
+        """Force a decision refresh when the exact runtime target is reached."""
+        self._runtime_completion_unsubscribe = None
+        if self._last_runtime_update is not None:
+            self._commit_active_runtime(now)
+        self._async_update_grid_import_tracking(now)
+        self._refresh_active_runtime_reason()
         self._async_notify_listeners()
         self.hass.async_create_task(self._async_apply_decision())
 
