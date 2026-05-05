@@ -84,6 +84,7 @@ from .high_mode import allow_post_runtime_export_guard_restart
 from .low_mode import (
     assisted_run_surplus_threshold_w as low_mode_assisted_surplus_threshold_w,
     should_allow_assisted_run as should_allow_low_mode_assisted_run,
+    should_keep_assisted_run as should_keep_low_mode_assisted_run,
     forecast_wait_threshold_kwh as low_mode_forecast_wait_threshold_kwh,
     runtime_pressure as low_mode_runtime_pressure,
     runtime_wait_buffer_minutes as low_mode_runtime_wait_buffer_minutes,
@@ -113,6 +114,7 @@ LOW_FORECAST_WAIT_THRESHOLD_MIN_MULTIPLIER = 1.0
 LOW_FORECAST_WAIT_THRESHOLD_MAX_MULTIPLIER = 1.75
 LOW_FORECAST_ASSISTED_SURPLUS_EARLY_RATIO = 0.85
 LOW_FORECAST_ASSISTED_SURPLUS_LATE_RATIO = 0.35
+LOW_FORECAST_ASSISTED_HOLD_MINUTES = 3.0
 PENDING_LOAD_STATE_TIMEOUT = timedelta(seconds=30)
 DEBUG_DECISION_LOG_FILENAME = "solar_load_controller_decisions.jsonl"
 DEBUG_DECISION_LOG_RETENTION_DAYS = 7
@@ -1217,6 +1219,9 @@ class SolarLoadController:
                 "low_forecast_assisted_surplus_late_ratio": (
                     LOW_FORECAST_ASSISTED_SURPLUS_LATE_RATIO
                 ),
+                "low_forecast_assisted_hold_minutes": (
+                    LOW_FORECAST_ASSISTED_HOLD_MINUTES
+                ),
                 "high_mode_base_household_load_w": (
                     self.high_mode_base_household_load_w
                 ),
@@ -1630,6 +1635,23 @@ class SolarLoadController:
             return False
         if self._must_force_minimum_runtime(runtime_remaining_minutes):
             return False
+        if (
+            self.is_load_on
+            and self._active_runtime_reason == DECISION_LOW_FORECAST_ASSISTED_RUN
+            and self._last_turned_on_at is not None
+        ):
+            min_on_minutes = _as_float(
+                self.config.get(CONF_MIN_ON_MINUTES),
+                DEFAULT_MIN_ON_MINUTES,
+            )
+            return should_keep_low_mode_assisted_run(
+                minutes_since_turn_on=self._minutes_since(self._last_turned_on_at),
+                configured_min_on_minutes=min_on_minutes,
+                assisted_hold_minutes=LOW_FORECAST_ASSISTED_HOLD_MINUTES,
+                projected_grid_import_exceeds_limit=self._projected_grid_import_exceeds_limit,
+                forecast_next_hour_kwh=self._forecast_next_hour_kwh,
+                forecast_wait_threshold_kwh=self.low_mode_forecast_wait_threshold_kwh,
+            )
         if self.available_surplus_w >= self.load_power_w:
             return False
 

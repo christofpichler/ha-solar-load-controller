@@ -138,3 +138,25 @@ def should_allow_assisted_run(
     if forecast_next_hour_kwh is None:
         return False
     return forecast_next_hour_kwh >= forecast_wait_threshold_kwh
+
+
+def should_keep_assisted_run(
+    *,
+    minutes_since_turn_on: float,
+    configured_min_on_minutes: float,
+    assisted_hold_minutes: float,
+    projected_grid_import_exceeds_limit: bool,
+    forecast_next_hour_kwh: float | None,
+    forecast_wait_threshold_kwh: float,
+) -> bool:
+    """Return whether an active low-assist run should be held a bit longer."""
+    if projected_grid_import_exceeds_limit:
+        return False
+    if forecast_next_hour_kwh is None:
+        return False
+
+    hold_minutes = max(0.0, configured_min_on_minutes, assisted_hold_minutes)
+    if minutes_since_turn_on >= hold_minutes:
+        return False
+
+    return forecast_next_hour_kwh >= forecast_wait_threshold_kwh

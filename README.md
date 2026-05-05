@@ -162,7 +162,27 @@ Coming soon.
 
 ### Low Mode
 
-Coming soon.
+![Low Mode concept](assets/low-mode-concept-en.png)
+
+Low mode is intended for weaker forecast days. It stays defensive early,
+prefers waiting while forecast and remaining runtime slack still justify it,
+and only becomes progressively more willing to assist or force runtime later in
+the day.
+
+The current low-mode flow uses separate helpers for:
+
+- runtime pressure and remaining slack
+- forecast-aware waiting (`low_wait`)
+- controlled assisted starts with partial current solar support (`low_assist`)
+- deadline-driven runtime forcing when waiting is no longer responsible
+
+This is designed to avoid unnecessary grid-heavy starts early, while still
+making sure the configured daily minimum runtime can be reached later if the PV
+day stays weak.
+
+For the technical decision model, helper functions, and hardcoded tuning
+constants behind each mode, see
+[docs/decision-model.md](docs/decision-model.md).
 
 ## Decision States
 
@@ -172,6 +192,8 @@ Decision states are intentionally short English values:
 - `export_guard`
 - `forecast_run`
 - `forecast`
+- `low_assist`
+- `low_wait`
 - `grid_import`
 - `battery`
 - `battery_priority`

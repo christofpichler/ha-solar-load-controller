@@ -25,6 +25,7 @@ setattr(custom_components, "solar_load_controller", solar_load_controller)
 from custom_components.solar_load_controller.low_mode import (
     assisted_run_surplus_threshold_w,
     should_allow_assisted_run,
+    should_keep_assisted_run,
     forecast_wait_threshold_kwh,
     runtime_pressure,
     runtime_wait_buffer_minutes,
@@ -194,6 +195,42 @@ class LowModeHelperTest(unittest.TestCase):
                 forecast_next_hour_kwh=0.8,
                 forecast_wait_threshold_kwh=0.7,
                 required_surplus_w=200.0,
+            )
+        )
+
+    def test_assisted_run_hold_keeps_recent_start_alive(self) -> None:
+        """Low assisted runs should hold briefly if grid stays clean and forecast still looks good."""
+        self.assertTrue(
+            should_keep_assisted_run(
+                minutes_since_turn_on=1.2,
+                configured_min_on_minutes=1.0,
+                assisted_hold_minutes=3.0,
+                projected_grid_import_exceeds_limit=False,
+                forecast_next_hour_kwh=0.8,
+                forecast_wait_threshold_kwh=0.7,
+            )
+        )
+
+    def test_assisted_run_hold_ends_after_window_or_grid_limit(self) -> None:
+        """Assisted hold should stop once the hold window passes or grid gets too high."""
+        self.assertFalse(
+            should_keep_assisted_run(
+                minutes_since_turn_on=3.1,
+                configured_min_on_minutes=1.0,
+                assisted_hold_minutes=3.0,
+                projected_grid_import_exceeds_limit=False,
+                forecast_next_hour_kwh=0.8,
+                forecast_wait_threshold_kwh=0.7,
+            )
+        )
+        self.assertFalse(
+            should_keep_assisted_run(
+                minutes_since_turn_on=1.2,
+                configured_min_on_minutes=1.0,
+                assisted_hold_minutes=3.0,
+                projected_grid_import_exceeds_limit=True,
+                forecast_next_hour_kwh=0.8,
+                forecast_wait_threshold_kwh=0.7,
             )
         )
 
