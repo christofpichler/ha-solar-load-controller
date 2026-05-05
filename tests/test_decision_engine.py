@@ -31,6 +31,7 @@ from custom_components.solar_load_controller.const import (
     DECISION_GRID_IMPORT_LIMIT_EXCEEDED,
     DECISION_LOW_FORECAST_ASSISTED_RUN,
     DECISION_LOW_FORECAST_WAIT,
+    DECISION_MISSING_REQUIRED_SENSOR,
     DECISION_MINIMUM_OFF_TIME_ACTIVE,
     DECISION_MINIMUM_ON_TIME_ACTIVE,
     DECISION_MINIMUM_RUNTIME_REACHED,
@@ -132,6 +133,18 @@ class DecisionEngineTest(unittest.TestCase):
 
         self.assertFalse(result.should_run)
         self.assertEqual(result.reason, DECISION_LOW_FORECAST_WAIT)
+
+    def test_missing_sensor_beats_time_window_for_startup_diagnostics(self) -> None:
+        """Missing required input should be visible even outside the time window."""
+        result = evaluate_decision(
+            make_inputs(
+                inside_time_window=False,
+                missing_required_grid_sensor_value=True,
+            )
+        )
+
+        self.assertFalse(result.should_run)
+        self.assertEqual(result.reason, DECISION_MISSING_REQUIRED_SENSOR)
 
     def test_forecast_assisted_run_uses_low_assist_reason(self) -> None:
         """Controlled low-mode assisted starts should use the low_assist reason."""

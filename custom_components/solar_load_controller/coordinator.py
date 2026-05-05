@@ -56,6 +56,7 @@ from .const import (
     DECISION_FORECAST_ASSISTED_RUN,
     DECISION_GRID_IMPORT_LIMIT_EXCEEDED,
     DECISION_LOW_FORECAST_ASSISTED_RUN,
+    DECISION_MINIMUM_RUNTIME_REACHED,
     DECISION_MINIMUM_RUNTIME_REQUIRED,
     DECISION_SOLAR_SURPLUS_AVAILABLE,
     DEFAULT_BATTERY_POWER_DIRECTION,
@@ -1086,7 +1087,10 @@ class SolarLoadController:
             ):
                 self._runtime_force_latched = False
 
-        self._async_clear_pending_load_state(new_is_on)
+        if old_is_on != new_is_on:
+            self._async_clear_pending_load_state()
+        else:
+            self._async_clear_pending_load_state(new_is_on)
         self._async_update_grid_import_tracking()
         if old_is_on != new_is_on and change_source == "manual":
             self._async_log_manual_load_change(new_is_on)
@@ -1206,7 +1210,7 @@ class SolarLoadController:
             ):
                 self._runtime_force_latched = False
             self._async_log_decision_if_changed(decision)
-            if decision.reason == DECISION_AUTOMATION_PAUSED:
+            if decision.reason == DECISION_AUTOMATION_PAUSED and not self.is_load_on:
                 return
             if decision.should_run == self.is_load_on:
                 return

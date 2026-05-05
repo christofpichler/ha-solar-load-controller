@@ -139,12 +139,12 @@ def evaluate_decision(inputs: DecisionInputs) -> DecisionResult:
     if inputs.automation_paused:
         should_run = False
         reason = DECISION_AUTOMATION_PAUSED
-    elif not inputs.inside_time_window:
-        should_run = False
-        reason = DECISION_TIME_WINDOW_BLOCKED
     elif inputs.missing_required_grid_sensor_value:
         should_run = False
         reason = DECISION_MISSING_REQUIRED_SENSOR
+    elif not inputs.inside_time_window:
+        should_run = False
+        reason = DECISION_TIME_WINDOW_BLOCKED
     elif inputs.is_load_on and inputs.min_on_active:
         should_run = True
         reason = DECISION_MINIMUM_ON_TIME_ACTIVE
