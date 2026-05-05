@@ -187,7 +187,6 @@ class SolarLoadRuntimeRemainingTodaySensor(SolarLoadBaseSensor):
         """Return remaining runtime target in minutes."""
         return self.controller.runtime_remaining_today_minutes
 
-
 class SolarLoadEnergyTodaySensor(SolarLoadBaseSensor):
     """Sensor that estimates today's load energy use."""
 
