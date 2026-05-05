@@ -82,6 +82,10 @@ from .energy import (
 )
 from .high_mode import allow_post_runtime_export_guard_restart
 from .low_mode import (
+    assisted_run_effective_surplus_threshold_w as low_mode_assisted_effective_surplus_threshold_w,
+    assisted_run_forecast_threshold_kwh as low_mode_assisted_run_forecast_threshold_kwh,
+    assisted_run_priority as low_mode_assisted_run_priority,
+    assisted_run_strength_ratio as low_mode_assisted_run_strength_ratio,
     assisted_run_surplus_threshold_w as low_mode_assisted_surplus_threshold_w,
     should_allow_assisted_run as should_allow_low_mode_assisted_run,
     should_keep_assisted_run as should_keep_low_mode_assisted_run,
@@ -115,6 +119,11 @@ LOW_FORECAST_WAIT_THRESHOLD_MAX_MULTIPLIER = 1.75
 LOW_FORECAST_ASSISTED_SURPLUS_EARLY_RATIO = 0.85
 LOW_FORECAST_ASSISTED_SURPLUS_LATE_RATIO = 0.35
 LOW_FORECAST_ASSISTED_HOLD_MINUTES = 3.0
+LOW_FORECAST_ASSISTED_PRIORITY_EXPONENT = 3.0
+LOW_FORECAST_ASSISTED_SURPLUS_LATE_RELIEF_RATIO = 0.6
+LOW_FORECAST_ASSISTED_FORECAST_OVERRIDE_RATIO_SPAN = 1.0
+LOW_FORECAST_ASSISTED_FORECAST_OVERRIDE_EXPONENT = 2.4
+LOW_FORECAST_ASSISTED_FORECAST_LATE_RELIEF_RATIO = 0.9
 PENDING_LOAD_STATE_TIMEOUT = timedelta(seconds=30)
 DEBUG_DECISION_LOG_FILENAME = "solar_load_controller_decisions.jsonl"
 DEBUG_DECISION_LOG_RETENTION_DAYS = 7
@@ -156,6 +165,7 @@ class SolarLoadController:
         self._runtime_seconds = 0.0
         self._solar_runtime_seconds = 0.0
         self._forced_runtime_seconds = 0.0
+        self._runtime_force_latched = False
         self._active_runtime_reason: str | None = None
         self._switch_cycles = 0
         self._last_runtime_update: datetime | None = None
@@ -246,6 +256,8 @@ class SolarLoadController:
     def async_set_automation_paused(self, paused: bool) -> None:
         """Set whether automatic control is paused."""
         self.automation_paused = paused
+        if paused:
+            self._runtime_force_latched = False
         self._async_notify_listeners()
         self.hass.async_create_task(self._async_apply_decision())
 
@@ -485,6 +497,49 @@ class SolarLoadController:
             self.low_mode_runtime_pressure,
             early_ratio=LOW_FORECAST_ASSISTED_SURPLUS_EARLY_RATIO,
             late_ratio=LOW_FORECAST_ASSISTED_SURPLUS_LATE_RATIO,
+        )
+
+    @property
+    def low_mode_assisted_start_surplus_w(self) -> float:
+        """Return current solar support usable for low-assist start decisions."""
+        return round(self.available_surplus_w + self.usable_battery_charge_w, 1)
+
+    @property
+    def low_mode_assisted_strength_ratio(self) -> float:
+        """Return how strongly the current low-assist threshold is exceeded."""
+        return low_mode_assisted_run_strength_ratio(
+            self.low_mode_assisted_start_surplus_w,
+            self.low_mode_assisted_surplus_threshold_w,
+        )
+
+    @property
+    def low_mode_assisted_priority(self) -> float:
+        """Return how strongly low assist should favor earlier PV usage."""
+        return low_mode_assisted_run_priority(
+            self.low_mode_runtime_progress,
+            exponent=LOW_FORECAST_ASSISTED_PRIORITY_EXPONENT,
+        )
+
+    @property
+    def low_mode_assisted_effective_surplus_threshold_w(self) -> float:
+        """Return the effective low-assist surplus threshold after late relief."""
+        return low_mode_assisted_effective_surplus_threshold_w(
+            self.low_mode_assisted_surplus_threshold_w,
+            self.low_mode_assisted_priority,
+            late_relief_ratio=LOW_FORECAST_ASSISTED_SURPLUS_LATE_RELIEF_RATIO,
+        )
+
+    @property
+    def low_mode_assisted_forecast_threshold_kwh(self) -> float:
+        """Return the effective forecast threshold for low assisted starts."""
+        return low_mode_assisted_run_forecast_threshold_kwh(
+            self.low_mode_forecast_wait_threshold_kwh,
+            self.low_mode_assisted_start_surplus_w,
+            self.low_mode_assisted_effective_surplus_threshold_w,
+            assist_priority=self.low_mode_assisted_priority,
+            ratio_span=LOW_FORECAST_ASSISTED_FORECAST_OVERRIDE_RATIO_SPAN,
+            exponent=LOW_FORECAST_ASSISTED_FORECAST_OVERRIDE_EXPONENT,
+            late_relief_ratio=LOW_FORECAST_ASSISTED_FORECAST_LATE_RELIEF_RATIO,
         )
 
     @property
@@ -904,6 +959,19 @@ class SolarLoadController:
             low_mode_assisted_surplus_threshold_w=(
                 self.low_mode_assisted_surplus_threshold_w
             ),
+            low_mode_assisted_effective_surplus_threshold_w=(
+                self.low_mode_assisted_effective_surplus_threshold_w
+            ),
+            low_mode_assisted_start_surplus_w=(
+                self.low_mode_assisted_start_surplus_w
+            ),
+            low_mode_assisted_strength_ratio=(
+                self.low_mode_assisted_strength_ratio
+            ),
+            low_mode_assisted_priority=self.low_mode_assisted_priority,
+            low_mode_assisted_forecast_threshold_kwh=(
+                self.low_mode_assisted_forecast_threshold_kwh
+            ),
             min_on_active=self.min_on_active,
             min_on_remaining_minutes=self.min_on_remaining_minutes,
             min_off_active=self.min_off_active,
@@ -939,6 +1007,7 @@ class SolarLoadController:
             high_forecast_grid_import_shutdown_delay_seconds=(
                 GRID_IMPORT_SHUTDOWN_DELAY.total_seconds()
             ),
+            runtime_force_latched=self._runtime_force_latched,
             must_force_minimum_runtime=self._must_force_minimum_runtime(
                 runtime_remaining
             ),
@@ -1002,6 +1071,11 @@ class SolarLoadController:
             self._last_turned_off_at = dt_util.utcnow()
             self._grid_import_over_limit_since = None
             self._high_forecast_grid_import_since = None
+            if (
+                change_source == "manual"
+                or self.runtime_remaining_today_minutes <= 0
+            ):
+                self._runtime_force_latched = False
 
         self._async_clear_pending_load_state(new_is_on)
         self._async_update_grid_import_tracking()
@@ -1027,6 +1101,7 @@ class SolarLoadController:
         self._runtime_seconds = 0.0
         self._solar_runtime_seconds = 0.0
         self._forced_runtime_seconds = 0.0
+        self._runtime_force_latched = False
         self._switch_cycles = 0
         self._last_runtime_update = dt_util.utcnow() if self.is_load_on else None
         if self.is_load_on:
@@ -1062,6 +1137,19 @@ class SolarLoadController:
         self._applying_decision = True
         try:
             decision = self.decision
+            if (
+                decision.should_run
+                and decision.reason == DECISION_MINIMUM_RUNTIME_REQUIRED
+            ):
+                self._runtime_force_latched = True
+            elif (
+                not decision.should_run
+                and decision.reason in {
+                    DECISION_AUTOMATION_PAUSED,
+                    DECISION_MINIMUM_RUNTIME_REACHED,
+                }
+            ):
+                self._runtime_force_latched = False
             self._async_log_decision_if_changed(decision)
             if decision.reason == DECISION_AUTOMATION_PAUSED:
                 return
@@ -1221,6 +1309,21 @@ class SolarLoadController:
                 ),
                 "low_forecast_assisted_hold_minutes": (
                     LOW_FORECAST_ASSISTED_HOLD_MINUTES
+                ),
+                "low_forecast_assisted_priority_exponent": (
+                    LOW_FORECAST_ASSISTED_PRIORITY_EXPONENT
+                ),
+                "low_forecast_assisted_surplus_late_relief_ratio": (
+                    LOW_FORECAST_ASSISTED_SURPLUS_LATE_RELIEF_RATIO
+                ),
+                "low_forecast_assisted_forecast_override_ratio_span": (
+                    LOW_FORECAST_ASSISTED_FORECAST_OVERRIDE_RATIO_SPAN
+                ),
+                "low_forecast_assisted_forecast_override_exponent": (
+                    LOW_FORECAST_ASSISTED_FORECAST_OVERRIDE_EXPONENT
+                ),
+                "low_forecast_assisted_forecast_late_relief_ratio": (
+                    LOW_FORECAST_ASSISTED_FORECAST_LATE_RELIEF_RATIO
                 ),
                 "high_mode_base_household_load_w": (
                     self.high_mode_base_household_load_w
@@ -1410,7 +1513,11 @@ class SolarLoadController:
     def _must_force_minimum_runtime(self, runtime_remaining_minutes: float) -> bool:
         """Return whether the runtime target must be forced now."""
         if runtime_remaining_minutes <= 0:
+            self._runtime_force_latched = False
             return False
+
+        if self._runtime_force_latched and not self.automation_paused:
+            return True
 
         if self._forecast_is_insufficient_for_remaining_runtime:
             return True
@@ -1651,18 +1758,45 @@ class SolarLoadController:
                 projected_grid_import_exceeds_limit=self._projected_grid_import_exceeds_limit,
                 forecast_next_hour_kwh=self._forecast_next_hour_kwh,
                 forecast_wait_threshold_kwh=self.low_mode_forecast_wait_threshold_kwh,
+                effective_solar_surplus_w=self.low_mode_assisted_start_surplus_w,
+                required_surplus_w=self.low_mode_assisted_surplus_threshold_w,
+                assist_priority=self.low_mode_assisted_priority,
+                forecast_override_ratio_span=(
+                    LOW_FORECAST_ASSISTED_FORECAST_OVERRIDE_RATIO_SPAN
+                ),
+                forecast_override_exponent=(
+                    LOW_FORECAST_ASSISTED_FORECAST_OVERRIDE_EXPONENT
+                ),
+                surplus_late_relief_ratio=(
+                    LOW_FORECAST_ASSISTED_SURPLUS_LATE_RELIEF_RATIO
+                ),
+                forecast_late_relief_ratio=(
+                    LOW_FORECAST_ASSISTED_FORECAST_LATE_RELIEF_RATIO
+                ),
             )
         if self.available_surplus_w >= self.load_power_w:
             return False
 
-        effective_start_surplus_w = self.available_surplus_w + self.usable_battery_charge_w
         return should_allow_low_mode_assisted_run(
-            effective_solar_surplus_w=effective_start_surplus_w,
+            effective_solar_surplus_w=self.low_mode_assisted_start_surplus_w,
             projected_grid_import_exceeds_limit=self._projected_grid_import_exceeds_limit,
             battery_power_state=self.battery_power_state,
             forecast_next_hour_kwh=self._forecast_next_hour_kwh,
             forecast_wait_threshold_kwh=self.low_mode_forecast_wait_threshold_kwh,
             required_surplus_w=self.low_mode_assisted_surplus_threshold_w,
+            assist_priority=self.low_mode_assisted_priority,
+            forecast_override_ratio_span=(
+                LOW_FORECAST_ASSISTED_FORECAST_OVERRIDE_RATIO_SPAN
+            ),
+            forecast_override_exponent=(
+                LOW_FORECAST_ASSISTED_FORECAST_OVERRIDE_EXPONENT
+            ),
+            surplus_late_relief_ratio=(
+                LOW_FORECAST_ASSISTED_SURPLUS_LATE_RELIEF_RATIO
+            ),
+            forecast_late_relief_ratio=(
+                LOW_FORECAST_ASSISTED_FORECAST_LATE_RELIEF_RATIO
+            ),
         )
 
     @property

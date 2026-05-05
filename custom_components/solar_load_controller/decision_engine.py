@@ -66,6 +66,11 @@ class DecisionInputs:
     low_mode_runtime_wait_buffer_minutes: float
     low_mode_forecast_wait_threshold_kwh: float
     low_mode_assisted_surplus_threshold_w: float
+    low_mode_assisted_effective_surplus_threshold_w: float
+    low_mode_assisted_start_surplus_w: float
+    low_mode_assisted_strength_ratio: float
+    low_mode_assisted_priority: float
+    low_mode_assisted_forecast_threshold_kwh: float
     min_on_active: bool
     min_on_remaining_minutes: float
     min_off_active: bool
@@ -83,6 +88,7 @@ class DecisionInputs:
     high_forecast_grid_import_active: bool
     high_forecast_grid_import_duration_seconds: float
     high_forecast_grid_import_shutdown_delay_seconds: float
+    runtime_force_latched: bool
     must_force_minimum_runtime: bool
     min_runtime_battery_override: bool
     min_runtime_grid_override: bool

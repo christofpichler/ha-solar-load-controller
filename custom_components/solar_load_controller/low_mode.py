@@ -119,6 +119,86 @@ def assisted_run_surplus_threshold_w(
     return round(load_power_w * ratio, 1)
 
 
+def assisted_run_strength_ratio(
+    effective_solar_surplus_w: float,
+    required_surplus_w: float,
+) -> float:
+    """Return how strongly current solar exceeds the low-assist threshold."""
+    if required_surplus_w <= 0:
+        return 0.0
+    if effective_solar_surplus_w <= 0:
+        return 0.0
+    return round(effective_solar_surplus_w / required_surplus_w, 3)
+
+
+def assisted_run_priority(
+    progress: float,
+    *,
+    exponent: float,
+) -> float:
+    """Return how strongly low assist should prefer earlier PV usage."""
+    return runtime_pressure(progress, exponent=exponent)
+
+
+def assisted_run_effective_surplus_threshold_w(
+    required_surplus_w: float,
+    assist_priority: float,
+    *,
+    late_relief_ratio: float,
+) -> float:
+    """Return the assisted surplus threshold after later-day relief."""
+    if required_surplus_w <= 0:
+        return 0.0
+
+    clamped_priority = min(1.0, max(0.0, assist_priority))
+    relief_ratio = clamped_priority * max(0.0, late_relief_ratio)
+    return round(max(0.0, required_surplus_w * (1.0 - relief_ratio)), 1)
+
+
+def assisted_run_forecast_threshold_kwh(
+    forecast_wait_threshold_kwh: float,
+    effective_solar_surplus_w: float,
+    required_surplus_w: float,
+    *,
+    assist_priority: float,
+    ratio_span: float,
+    exponent: float,
+    late_relief_ratio: float,
+) -> float:
+    """Return the forecast threshold after current solar quality relief.
+
+    If current solar only barely exceeds the assisted threshold, the next-hour
+    forecast should still matter almost fully. If current solar strongly
+    exceeds the threshold, the forecast hurdle should rapidly fade because the
+    controller should use that strong current solar window on a low day.
+    """
+    if forecast_wait_threshold_kwh <= 0:
+        return 0.0
+
+    strength_ratio = assisted_run_strength_ratio(
+        effective_solar_surplus_w,
+        required_surplus_w,
+    )
+    priority_relief = min(1.0, max(0.0, assist_priority)) * max(0.0, late_relief_ratio)
+    if strength_ratio <= 1.0:
+        return round(max(0.0, forecast_wait_threshold_kwh * (1.0 - priority_relief)), 3)
+
+    if ratio_span <= 0:
+        return round(
+            max(
+                0.0,
+                forecast_wait_threshold_kwh
+                * (1.0 - priority_relief),
+            ),
+            3,
+        )
+
+    normalized_strength = min(1.0, max(0.0, (strength_ratio - 1.0) / ratio_span))
+    strength_relief = normalized_strength**exponent
+    relief = min(1.0, strength_relief + priority_relief)
+    return round(max(0.0, forecast_wait_threshold_kwh * (1.0 - relief)), 3)
+
+
 def should_allow_assisted_run(
     *,
     effective_solar_surplus_w: float,
@@ -127,17 +207,38 @@ def should_allow_assisted_run(
     forecast_next_hour_kwh: float | None,
     forecast_wait_threshold_kwh: float,
     required_surplus_w: float,
+    assist_priority: float,
+    forecast_override_ratio_span: float,
+    forecast_override_exponent: float,
+    surplus_late_relief_ratio: float,
+    forecast_late_relief_ratio: float,
 ) -> bool:
     """Return whether low mode may start with partial current solar support."""
     if projected_grid_import_exceeds_limit:
         return False
     if battery_power_state == "discharging":
         return False
-    if effective_solar_surplus_w < required_surplus_w:
+
+    effective_required_surplus_w = assisted_run_effective_surplus_threshold_w(
+        required_surplus_w,
+        assist_priority,
+        late_relief_ratio=surplus_late_relief_ratio,
+    )
+    if effective_solar_surplus_w < effective_required_surplus_w:
         return False
+
+    assisted_forecast_threshold_kwh = assisted_run_forecast_threshold_kwh(
+        forecast_wait_threshold_kwh,
+        effective_solar_surplus_w,
+        effective_required_surplus_w,
+        assist_priority=assist_priority,
+        ratio_span=forecast_override_ratio_span,
+        exponent=forecast_override_exponent,
+        late_relief_ratio=forecast_late_relief_ratio,
+    )
     if forecast_next_hour_kwh is None:
-        return False
-    return forecast_next_hour_kwh >= forecast_wait_threshold_kwh
+        return assisted_forecast_threshold_kwh <= 0
+    return forecast_next_hour_kwh >= assisted_forecast_threshold_kwh
 
 
 def should_keep_assisted_run(
@@ -148,15 +249,36 @@ def should_keep_assisted_run(
     projected_grid_import_exceeds_limit: bool,
     forecast_next_hour_kwh: float | None,
     forecast_wait_threshold_kwh: float,
+    effective_solar_surplus_w: float,
+    required_surplus_w: float,
+    assist_priority: float,
+    forecast_override_ratio_span: float,
+    forecast_override_exponent: float,
+    surplus_late_relief_ratio: float,
+    forecast_late_relief_ratio: float,
 ) -> bool:
     """Return whether an active low-assist run should be held a bit longer."""
     if projected_grid_import_exceeds_limit:
-        return False
-    if forecast_next_hour_kwh is None:
         return False
 
     hold_minutes = max(0.0, configured_min_on_minutes, assisted_hold_minutes)
     if minutes_since_turn_on >= hold_minutes:
         return False
 
-    return forecast_next_hour_kwh >= forecast_wait_threshold_kwh
+    effective_required_surplus_w = assisted_run_effective_surplus_threshold_w(
+        required_surplus_w,
+        assist_priority,
+        late_relief_ratio=surplus_late_relief_ratio,
+    )
+    assisted_forecast_threshold_kwh = assisted_run_forecast_threshold_kwh(
+        forecast_wait_threshold_kwh,
+        effective_solar_surplus_w,
+        effective_required_surplus_w,
+        assist_priority=assist_priority,
+        ratio_span=forecast_override_ratio_span,
+        exponent=forecast_override_exponent,
+        late_relief_ratio=forecast_late_relief_ratio,
+    )
+    if forecast_next_hour_kwh is None:
+        return assisted_forecast_threshold_kwh <= 0
+    return forecast_next_hour_kwh >= assisted_forecast_threshold_kwh

@@ -23,14 +23,18 @@ solar_load_controller.__path__ = [str(PACKAGE_DIR)]
 setattr(custom_components, "solar_load_controller", solar_load_controller)
 
 from custom_components.solar_load_controller.low_mode import (
+    assisted_run_effective_surplus_threshold_w,
+    assisted_run_forecast_threshold_kwh,
+    assisted_run_priority,
+    assisted_run_strength_ratio,
     assisted_run_surplus_threshold_w,
-    should_allow_assisted_run,
-    should_keep_assisted_run,
     forecast_wait_threshold_kwh,
     runtime_pressure,
     runtime_wait_buffer_minutes,
-    should_wait_for_forecast,
+    should_allow_assisted_run,
     should_force_runtime,
+    should_keep_assisted_run,
+    should_wait_for_forecast,
 )
 
 
@@ -175,6 +179,11 @@ class LowModeHelperTest(unittest.TestCase):
                 forecast_next_hour_kwh=0.8,
                 forecast_wait_threshold_kwh=0.7,
                 required_surplus_w=200.0,
+                assist_priority=0.0,
+                forecast_override_ratio_span=1.0,
+                forecast_override_exponent=2.4,
+                surplus_late_relief_ratio=0.45,
+                forecast_late_relief_ratio=0.8,
             )
         )
         self.assertFalse(
@@ -185,6 +194,11 @@ class LowModeHelperTest(unittest.TestCase):
                 forecast_next_hour_kwh=0.8,
                 forecast_wait_threshold_kwh=0.7,
                 required_surplus_w=200.0,
+                assist_priority=0.0,
+                forecast_override_ratio_span=1.0,
+                forecast_override_exponent=2.4,
+                surplus_late_relief_ratio=0.45,
+                forecast_late_relief_ratio=0.8,
             )
         )
         self.assertFalse(
@@ -195,6 +209,136 @@ class LowModeHelperTest(unittest.TestCase):
                 forecast_next_hour_kwh=0.8,
                 forecast_wait_threshold_kwh=0.7,
                 required_surplus_w=200.0,
+                assist_priority=0.0,
+                forecast_override_ratio_span=1.0,
+                forecast_override_exponent=2.4,
+                surplus_late_relief_ratio=0.45,
+                forecast_late_relief_ratio=0.8,
+            )
+        )
+
+    def test_assisted_run_strength_ratio_reports_how_far_current_solar_exceeds_threshold(self) -> None:
+        """Current solar strength should be visible as a ratio above the assist threshold."""
+        self.assertEqual(assisted_run_strength_ratio(1720.0, 275.4), 6.245)
+
+    def test_assisted_run_priority_grows_later_in_the_day(self) -> None:
+        """Later low-mode progress should make assisted starts more aggressive."""
+        self.assertEqual(round(assisted_run_priority(0.5, exponent=2.4), 3), 0.189)
+
+    def test_late_assist_priority_can_lower_required_surplus(self) -> None:
+        """Later low-mode assist may accept a meaningfully smaller current solar share."""
+        self.assertEqual(
+            assisted_run_effective_surplus_threshold_w(
+                275.4,
+                1.0,
+                late_relief_ratio=0.45,
+            ),
+            151.5,
+        )
+
+    def test_strong_current_solar_can_relax_forecast_threshold_to_zero(self) -> None:
+        """A very strong current solar window should neutralize the weak next-hour veto."""
+        self.assertEqual(
+            assisted_run_forecast_threshold_kwh(
+                0.497,
+                1720.0,
+                275.4,
+                assist_priority=0.0,
+                ratio_span=1.0,
+                exponent=2.4,
+                late_relief_ratio=0.8,
+            ),
+            0.0,
+        )
+        self.assertTrue(
+            should_allow_assisted_run(
+                effective_solar_surplus_w=1720.0,
+                projected_grid_import_exceeds_limit=False,
+                battery_power_state="charging",
+                forecast_next_hour_kwh=0.364,
+                forecast_wait_threshold_kwh=0.497,
+                required_surplus_w=275.4,
+                assist_priority=0.0,
+                forecast_override_ratio_span=1.0,
+                forecast_override_exponent=2.4,
+                surplus_late_relief_ratio=0.45,
+                forecast_late_relief_ratio=0.8,
+            )
+        )
+
+    def test_slight_current_solar_overage_still_needs_some_forecast_support(self) -> None:
+        """A small assisted overage should still keep meaningful forecast caution."""
+        adjusted_threshold = assisted_run_forecast_threshold_kwh(
+            0.489,
+            350.0,
+            280.6,
+            assist_priority=0.0,
+            ratio_span=1.0,
+            exponent=2.4,
+            late_relief_ratio=0.8,
+        )
+        self.assertGreater(adjusted_threshold, 0.0)
+        self.assertFalse(
+            should_allow_assisted_run(
+                effective_solar_surplus_w=350.0,
+                projected_grid_import_exceeds_limit=False,
+                battery_power_state="charging",
+                forecast_next_hour_kwh=0.364,
+                forecast_wait_threshold_kwh=0.489,
+                required_surplus_w=280.6,
+                assist_priority=0.0,
+                forecast_override_ratio_span=1.0,
+                forecast_override_exponent=2.4,
+                surplus_late_relief_ratio=0.45,
+                forecast_late_relief_ratio=0.8,
+            )
+        )
+
+    def test_later_assist_priority_can_accept_partial_solar_before_force(self) -> None:
+        """Later low-mode assist should prefer moderate PV now over later forced runtime."""
+        self.assertTrue(
+            should_allow_assisted_run(
+                effective_solar_surplus_w=180.0,
+                projected_grid_import_exceeds_limit=False,
+                battery_power_state="charging",
+                forecast_next_hour_kwh=0.268,
+                forecast_wait_threshold_kwh=0.504,
+                required_surplus_w=270.6,
+                assist_priority=1.0,
+                forecast_override_ratio_span=1.0,
+                forecast_override_exponent=2.4,
+                surplus_late_relief_ratio=0.45,
+                forecast_late_relief_ratio=0.8,
+            )
+        )
+
+    def test_later_assist_priority_also_relaxes_forecast_for_just_enough_solar(self) -> None:
+        """Later assist should ease the forecast veto even near the relaxed surplus threshold."""
+        self.assertEqual(
+            assisted_run_forecast_threshold_kwh(
+                0.504,
+                148.8,
+                148.8,
+                assist_priority=1.0,
+                ratio_span=1.0,
+                exponent=2.4,
+                late_relief_ratio=0.8,
+            ),
+            0.101,
+        )
+        self.assertTrue(
+            should_allow_assisted_run(
+                effective_solar_surplus_w=148.8,
+                projected_grid_import_exceeds_limit=False,
+                battery_power_state="charging",
+                forecast_next_hour_kwh=0.11,
+                forecast_wait_threshold_kwh=0.504,
+                required_surplus_w=270.6,
+                assist_priority=1.0,
+                forecast_override_ratio_span=1.0,
+                forecast_override_exponent=2.4,
+                surplus_late_relief_ratio=0.45,
+                forecast_late_relief_ratio=0.8,
             )
         )
 
@@ -208,6 +352,13 @@ class LowModeHelperTest(unittest.TestCase):
                 projected_grid_import_exceeds_limit=False,
                 forecast_next_hour_kwh=0.8,
                 forecast_wait_threshold_kwh=0.7,
+                effective_solar_surplus_w=250.0,
+                required_surplus_w=200.0,
+                assist_priority=0.0,
+                forecast_override_ratio_span=1.0,
+                forecast_override_exponent=2.4,
+                surplus_late_relief_ratio=0.45,
+                forecast_late_relief_ratio=0.8,
             )
         )
 
@@ -221,6 +372,13 @@ class LowModeHelperTest(unittest.TestCase):
                 projected_grid_import_exceeds_limit=False,
                 forecast_next_hour_kwh=0.8,
                 forecast_wait_threshold_kwh=0.7,
+                effective_solar_surplus_w=250.0,
+                required_surplus_w=200.0,
+                assist_priority=0.0,
+                forecast_override_ratio_span=1.0,
+                forecast_override_exponent=2.4,
+                surplus_late_relief_ratio=0.45,
+                forecast_late_relief_ratio=0.8,
             )
         )
         self.assertFalse(
@@ -231,6 +389,13 @@ class LowModeHelperTest(unittest.TestCase):
                 projected_grid_import_exceeds_limit=True,
                 forecast_next_hour_kwh=0.8,
                 forecast_wait_threshold_kwh=0.7,
+                effective_solar_surplus_w=250.0,
+                required_surplus_w=200.0,
+                assist_priority=0.0,
+                forecast_override_ratio_span=1.0,
+                forecast_override_exponent=2.4,
+                surplus_late_relief_ratio=0.45,
+                forecast_late_relief_ratio=0.8,
             )
         )
 
