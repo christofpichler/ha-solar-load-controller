@@ -1,6 +1,28 @@
-"""Helpers for high-forecast runtime behavior."""
+"""Helpers and tuning constants for high-forecast runtime behavior."""
 
 from __future__ import annotations
+
+# ---------------------------------------------------------------------------
+# Tuning constants — all HIGH_FORECAST_* live here so coordinator.py
+# (and the future mid_mode.py) can import them from a single home.
+# ---------------------------------------------------------------------------
+
+# curtailment / grid-import tolerance
+HIGH_FORECAST_CURTAILMENT_HEADROOM_RATIO: float = 0.8
+HIGH_FORECAST_NO_GRID_TOLERANCE_W: float = 25.0
+
+# post-runtime battery top-up targets
+HIGH_FORECAST_POST_RUNTIME_BATTERY_TARGET_SOC: float = 99.0
+HIGH_FORECAST_POST_RUNTIME_BATTERY_HEADROOM_KWH: float = 0.05
+
+# post-runtime export-guard restart thresholds
+HIGH_FORECAST_POST_RUNTIME_RESTART_SURPLUS_MARGIN_W: float = 75.0
+HIGH_FORECAST_POST_RUNTIME_NEXT_HOUR_RATIO: float = 1.5
+
+# post-runtime priority-buffer timing
+HIGH_FORECAST_POST_RUNTIME_PRIORITY_BUFFER_MIN_HOURS: float = 2.0
+HIGH_FORECAST_POST_RUNTIME_PRIORITY_BUFFER_MAX_HOURS: float = 8.0
+HIGH_FORECAST_POST_RUNTIME_PRIORITY_BUFFER_EXPONENT: float = 1.6
 
 
 def allow_post_runtime_export_guard_restart(

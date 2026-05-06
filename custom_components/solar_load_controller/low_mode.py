@@ -1,6 +1,38 @@
-"""Helpers for low-forecast runtime behavior."""
+"""Helpers and tuning constants for low-forecast runtime behavior."""
 
 from __future__ import annotations
+
+# ---------------------------------------------------------------------------
+# Tuning constants — all LOW_FORECAST_* live here so that coordinator.py
+# (and the future mid_mode.py) can import them from a single home.
+# ---------------------------------------------------------------------------
+
+# runtime-force pressure curve
+LOW_FORECAST_RUNTIME_BUFFER_MIN_RATIO: float = 0.15
+LOW_FORECAST_RUNTIME_BUFFER_MAX_RATIO: float = 0.75
+LOW_FORECAST_RUNTIME_BUFFER_EXPONENT: float = 1.6
+
+# wait-for-forecast threshold scaling
+LOW_FORECAST_WAIT_THRESHOLD_MIN_MULTIPLIER: float = 1.0
+LOW_FORECAST_WAIT_THRESHOLD_MAX_MULTIPLIER: float = 1.75
+
+# assisted-run surplus thresholds
+LOW_FORECAST_ASSISTED_SURPLUS_EARLY_RATIO: float = 0.85
+LOW_FORECAST_ASSISTED_SURPLUS_LATE_RATIO: float = 0.35
+LOW_FORECAST_ASSISTED_HOLD_MINUTES: float = 3.0
+LOW_FORECAST_ASSISTED_PRIORITY_EXPONENT: float = 0.65
+LOW_FORECAST_ASSISTED_SURPLUS_LATE_RELIEF_RATIO: float = 0.6
+
+# forecast-override curve shape
+LOW_FORECAST_ASSISTED_FORECAST_OVERRIDE_RATIO_SPAN: float = 1.0
+LOW_FORECAST_ASSISTED_FORECAST_OVERRIDE_EXPONENT: float = 2.4
+LOW_FORECAST_ASSISTED_FORECAST_LATE_RELIEF_RATIO: float = 0.9
+
+# assisted-hold thresholds
+LOW_FORECAST_ASSISTED_HOLD_SURPLUS_RATIO: float = 0.8
+LOW_FORECAST_ASSISTED_HOLD_FORECAST_RATIO: float = 0.75
+LOW_FORECAST_ASSISTED_HOLD_COLLAPSE_RATIO: float = 0.3
+LOW_FORECAST_ASSISTED_HOLD_SUPPORT_TIME_CONSTANT_SECONDS: float = 90.0
 
 
 def runtime_pressure(progress: float, *, exponent: float) -> float:

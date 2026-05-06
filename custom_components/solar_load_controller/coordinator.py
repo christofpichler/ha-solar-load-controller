@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import math
-import threading
 from collections.abc import Callable
 from datetime import date, datetime, time, timedelta
 from typing import Any
@@ -79,13 +77,31 @@ from .const import (
     FORECAST_DAY_MODE_LOW,
 )
 from .decision_engine import DecisionInputs, DecisionResult, evaluate_decision
+from .decision_log import (
+    append_decision_log,
+    DECISION_LOG_FILENAME,
+    DECISION_LOG_MAX_ENTRIES,
+    DECISION_LOG_RETENTION_DAYS,
+)
+from .runtime_tracker import RuntimeTracker
 from .energy import (
     household_energy_reserve_kwh,
     required_input_energy,
     time_priority_buffer_kwh,
     usable_battery_charge_for_ac_surplus,
 )
-from .high_mode import allow_post_runtime_export_guard_restart
+from .high_mode import (
+    allow_post_runtime_export_guard_restart,
+    HIGH_FORECAST_CURTAILMENT_HEADROOM_RATIO,
+    HIGH_FORECAST_NO_GRID_TOLERANCE_W,
+    HIGH_FORECAST_POST_RUNTIME_BATTERY_TARGET_SOC,
+    HIGH_FORECAST_POST_RUNTIME_BATTERY_HEADROOM_KWH,
+    HIGH_FORECAST_POST_RUNTIME_RESTART_SURPLUS_MARGIN_W,
+    HIGH_FORECAST_POST_RUNTIME_NEXT_HOUR_RATIO,
+    HIGH_FORECAST_POST_RUNTIME_PRIORITY_BUFFER_MIN_HOURS,
+    HIGH_FORECAST_POST_RUNTIME_PRIORITY_BUFFER_MAX_HOURS,
+    HIGH_FORECAST_POST_RUNTIME_PRIORITY_BUFFER_EXPONENT,
+)
 from .low_mode import (
     assisted_run_effective_surplus_threshold_w as low_mode_assisted_effective_surplus_threshold_w,
     assisted_run_forecast_threshold_kwh as low_mode_assisted_run_forecast_threshold_kwh,
@@ -99,6 +115,23 @@ from .low_mode import (
     runtime_wait_buffer_minutes as low_mode_runtime_wait_buffer_minutes,
     should_wait_for_forecast as should_wait_for_low_mode_forecast,
     should_force_runtime as should_force_low_mode_runtime,
+    LOW_FORECAST_RUNTIME_BUFFER_MIN_RATIO,
+    LOW_FORECAST_RUNTIME_BUFFER_MAX_RATIO,
+    LOW_FORECAST_RUNTIME_BUFFER_EXPONENT,
+    LOW_FORECAST_WAIT_THRESHOLD_MIN_MULTIPLIER,
+    LOW_FORECAST_WAIT_THRESHOLD_MAX_MULTIPLIER,
+    LOW_FORECAST_ASSISTED_SURPLUS_EARLY_RATIO,
+    LOW_FORECAST_ASSISTED_SURPLUS_LATE_RATIO,
+    LOW_FORECAST_ASSISTED_HOLD_MINUTES,
+    LOW_FORECAST_ASSISTED_PRIORITY_EXPONENT,
+    LOW_FORECAST_ASSISTED_SURPLUS_LATE_RELIEF_RATIO,
+    LOW_FORECAST_ASSISTED_FORECAST_OVERRIDE_RATIO_SPAN,
+    LOW_FORECAST_ASSISTED_FORECAST_OVERRIDE_EXPONENT,
+    LOW_FORECAST_ASSISTED_FORECAST_LATE_RELIEF_RATIO,
+    LOW_FORECAST_ASSISTED_HOLD_SURPLUS_RATIO,
+    LOW_FORECAST_ASSISTED_HOLD_FORECAST_RATIO,
+    LOW_FORECAST_ASSISTED_HOLD_COLLAPSE_RATIO,
+    LOW_FORECAST_ASSISTED_HOLD_SUPPORT_TIME_CONSTANT_SECONDS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -108,40 +141,8 @@ _LOGGER = logging.getLogger(__name__)
 GRID_IMPORT_RESTART_COOLDOWN = timedelta(seconds=0)
 GRID_IMPORT_SHUTDOWN_DELAY = timedelta(seconds=15)
 GRID_IMPORT_START_MARGIN_W = 50
-HIGH_FORECAST_CURTAILMENT_HEADROOM_RATIO = 0.8
-HIGH_FORECAST_NO_GRID_TOLERANCE_W = 25
 BATTERY_CHARGING_EFFICIENCY = 0.9
-HIGH_FORECAST_POST_RUNTIME_BATTERY_TARGET_SOC = 99
-HIGH_FORECAST_POST_RUNTIME_BATTERY_HEADROOM_KWH = 0.05
-HIGH_FORECAST_POST_RUNTIME_RESTART_SURPLUS_MARGIN_W = 75
-HIGH_FORECAST_POST_RUNTIME_NEXT_HOUR_RATIO = 1.5
-HIGH_FORECAST_POST_RUNTIME_PRIORITY_BUFFER_MIN_HOURS = 2.0
-HIGH_FORECAST_POST_RUNTIME_PRIORITY_BUFFER_MAX_HOURS = 8.0
-HIGH_FORECAST_POST_RUNTIME_PRIORITY_BUFFER_EXPONENT = 1.6
-LOW_FORECAST_RUNTIME_BUFFER_MIN_RATIO = 0.15
-LOW_FORECAST_RUNTIME_BUFFER_MAX_RATIO = 0.75
-LOW_FORECAST_RUNTIME_BUFFER_EXPONENT = 1.6
-LOW_FORECAST_WAIT_THRESHOLD_MIN_MULTIPLIER = 1.0
-LOW_FORECAST_WAIT_THRESHOLD_MAX_MULTIPLIER = 1.75
-LOW_FORECAST_ASSISTED_SURPLUS_EARLY_RATIO = 0.85
-LOW_FORECAST_ASSISTED_SURPLUS_LATE_RATIO = 0.35
-LOW_FORECAST_ASSISTED_HOLD_MINUTES = 3.0
-LOW_FORECAST_ASSISTED_PRIORITY_EXPONENT = 0.65
-LOW_FORECAST_ASSISTED_SURPLUS_LATE_RELIEF_RATIO = 0.6
-LOW_FORECAST_ASSISTED_FORECAST_OVERRIDE_RATIO_SPAN = 1.0
-LOW_FORECAST_ASSISTED_FORECAST_OVERRIDE_EXPONENT = 2.4
-LOW_FORECAST_ASSISTED_FORECAST_LATE_RELIEF_RATIO = 0.9
-LOW_FORECAST_ASSISTED_HOLD_SURPLUS_RATIO = 0.8
-LOW_FORECAST_ASSISTED_HOLD_FORECAST_RATIO = 0.75
-LOW_FORECAST_ASSISTED_HOLD_COLLAPSE_RATIO = 0.3
-LOW_FORECAST_ASSISTED_HOLD_SUPPORT_TIME_CONSTANT_SECONDS = 90.0
 PENDING_LOAD_STATE_TIMEOUT = timedelta(seconds=30)
-DEBUG_DECISION_LOG_FILENAME = "solar_load_controller_decisions.jsonl"
-DEBUG_DECISION_LOG_RETENTION_DAYS = 7
-DEBUG_DECISION_LOG_MAX_ENTRIES = 2000
-# Lock protects the JSONL file against concurrent writes from the HA executor thread pool.
-_DEBUG_LOG_LOCK = threading.Lock()
-
 # Storage schema version for the persistent runtime-latch state.
 _PERSIST_STORE_VERSION = 1
 
@@ -178,15 +179,10 @@ class SolarLoadController:
         self._last_grid_import_shutdown_at: datetime | None = None
         self._last_logged_decision_signature: tuple[bool, str, str] | None = None
 
-        self._runtime_seconds = 0.0
-        self._solar_runtime_seconds = 0.0
-        self._forced_runtime_seconds = 0.0
+        self._tracker: RuntimeTracker = RuntimeTracker()
         self._runtime_force_latched = False
-        self._active_runtime_reason: str | None = None
         self._low_assist_hold_support_w = 0.0
         self._low_assist_hold_support_updated_at: datetime | None = None
-        self._switch_cycles = 0
-        self._last_runtime_update: datetime | None = None
         self._last_turned_off_at: datetime | None = None
         self._last_turned_on_at: datetime | None = None
         self._daily_forecast_date: date | None = None
@@ -263,7 +259,7 @@ class SolarLoadController:
 
         if self.is_load_on:
             now = dt_util.utcnow()
-            self._last_runtime_update = now
+            self._tracker.start_tracking(now)
             self._last_turned_on_at = now
             self._refresh_active_runtime_reason()
             self._async_schedule_runtime_completion_check(now)
@@ -322,14 +318,7 @@ class SolarLoadController:
         if stat_date != today().isoformat():
             return
 
-        if stat_key == "runtime_today":
-            self._runtime_seconds = max(0.0, value * 60)
-        elif stat_key == "solar_runtime_today":
-            self._solar_runtime_seconds = max(0.0, value * 60)
-        elif stat_key == "forced_runtime_today":
-            self._forced_runtime_seconds = max(0.0, value * 60)
-        elif stat_key == "switch_cycles_today":
-            self._switch_cycles = max(0, int(value))
+        self._tracker.restore(stat_key, value)
 
         self._async_notify_listeners()
 
@@ -398,17 +387,17 @@ class SolarLoadController:
     @property
     def runtime_today_minutes(self) -> float:
         """Return total runtime today in minutes."""
-        return round(self._runtime_today_seconds() / 60, 1)
+        return round(self._tracker.runtime_today_seconds / 60, 1)
 
     @property
     def solar_runtime_today_minutes(self) -> float:
         """Return solar-surplus runtime today in minutes."""
-        return round(self._solar_runtime_today_seconds() / 60, 1)
+        return round(self._tracker.solar_runtime_today_seconds / 60, 1)
 
     @property
     def forced_runtime_today_minutes(self) -> float:
         """Return forced runtime today in minutes."""
-        return round(self._forced_runtime_today_seconds() / 60, 1)
+        return round(self._tracker.forced_runtime_today_seconds / 60, 1)
 
     @property
     def energy_today_kwh(self) -> float:
@@ -417,17 +406,16 @@ class SolarLoadController:
             self.config.get(CONF_LOAD_POWER_W),
             DEFAULT_LOAD_POWER_W,
         )
-        return round((self._runtime_today_seconds() / 3600) * load_power_w / 1000, 3)
+        return round((self._tracker.runtime_today_seconds / 3600) * load_power_w / 1000, 3)
 
     @property
     def switch_cycles_today(self) -> int:
         """Return number of automatic on cycles today."""
-        return self._switch_cycles
+        return self._tracker.switch_cycles
 
     @callback
     def _async_record_automatic_switch_on(self) -> None:
-        """Record one automatic switch-on cycle."""
-        self._switch_cycles += 1
+        """Notify listeners that an automatic switch-on cycle was recorded."""
         self._async_notify_listeners()
 
     @property
@@ -602,7 +590,7 @@ class SolarLoadController:
         """Return a smoothed support signal for keeping an assist run alive."""
         if not (
             self.is_load_on
-            and self._active_runtime_reason == DECISION_LOW_FORECAST_ASSISTED_RUN
+            and self._tracker.active_runtime_reason == DECISION_LOW_FORECAST_ASSISTED_RUN
         ):
             return self.low_mode_assisted_start_surplus_w
 
@@ -685,7 +673,7 @@ class SolarLoadController:
         now = now or dt_util.utcnow()
         if not (
             self.is_load_on
-            and self._active_runtime_reason == DECISION_LOW_FORECAST_ASSISTED_RUN
+            and self._tracker.active_runtime_reason == DECISION_LOW_FORECAST_ASSISTED_RUN
         ):
             self._low_assist_hold_support_w = 0.0
             self._low_assist_hold_support_updated_at = None
@@ -1060,10 +1048,10 @@ class SolarLoadController:
         """Return decision debug log metadata."""
         return {
             "enabled": bool(self.config.get(CONF_DEBUG_SENSOR_ENABLED)),
-            "path": self.hass.config.path(DEBUG_DECISION_LOG_FILENAME),
+            "path": self.hass.config.path(DECISION_LOG_FILENAME),
             "format": "jsonl",
-            "retention_days": DEBUG_DECISION_LOG_RETENTION_DAYS,
-            "max_entries": DEBUG_DECISION_LOG_MAX_ENTRIES,
+            "retention_days": DECISION_LOG_RETENTION_DAYS,
+            "max_entries": DECISION_LOG_MAX_ENTRIES,
         }
 
     @property
@@ -1194,8 +1182,8 @@ class SolarLoadController:
         if event.data.get("entity_id") == self.load_entity_id:
             self._async_load_state_changed(event)
         else:
-            if self._last_runtime_update is not None:
-                self._commit_active_runtime()
+            if self._tracker.is_tracking:
+                self._tracker.commit(dt_util.utcnow())
             self._capture_daily_forecast_if_needed()
             self._async_update_grid_import_tracking()
             self._refresh_active_runtime_reason()
@@ -1214,19 +1202,20 @@ class SolarLoadController:
 
         if not old_is_on and new_is_on:
             now = dt_util.utcnow()
-            self._last_runtime_update = now
+            if self._pending_automatic_turn_on:
+                self._tracker.start_tracking(now, automatic=True)
+                self._tracker.set_reason(self._pending_decision_reason)
+                self._async_record_automatic_switch_on()
+            else:
+                self._tracker.start_tracking(now)
+                self._tracker.set_reason(None)
             self._last_turned_on_at = now
             self._last_grid_import_shutdown_at = None
             self._async_schedule_runtime_completion_check(now)
-            if self._pending_automatic_turn_on:
-                self._active_runtime_reason = self._pending_decision_reason
-                self._async_record_automatic_switch_on()
-            else:
-                self._active_runtime_reason = None
         elif old_is_on and not new_is_on:
-            self._commit_active_runtime()
-            self._last_runtime_update = None
-            self._active_runtime_reason = None
+            self._tracker.commit(dt_util.utcnow())
+            self._tracker.stop_tracking()
+            self._tracker.set_reason(None)
             self._last_turned_off_at = dt_util.utcnow()
             self._async_cancel_runtime_completion_check()
             self._grid_import_over_limit_since = None
@@ -1254,8 +1243,8 @@ class SolarLoadController:
     @callback
     def _async_periodic_update(self, now: datetime) -> None:
         """Commit active runtime while the load is running."""
-        if self._last_runtime_update is not None:
-            self._commit_active_runtime(now)
+        if self._tracker.is_tracking:
+            self._tracker.commit(now)
         if self.is_load_on:
             self._async_schedule_runtime_completion_check(now)
         else:
@@ -1270,19 +1259,15 @@ class SolarLoadController:
     @callback
     def _async_midnight_reset(self, now: datetime) -> None:
         """Reset daily statistics at midnight."""
-        self._runtime_seconds = 0.0
-        self._solar_runtime_seconds = 0.0
-        self._forced_runtime_seconds = 0.0
+        midnight_now = dt_util.utcnow()
+        self._tracker.midnight_reset(is_on=self.is_load_on, now=midnight_now)
         self._runtime_force_latched = False
-        self._switch_cycles = 0
-        self._last_runtime_update = dt_util.utcnow() if self.is_load_on else None
         if self.is_load_on:
-            self._last_turned_on_at = self._last_runtime_update
+            self._last_turned_on_at = midnight_now
             self._last_turned_off_at = None
             self._refresh_active_runtime_reason()
             self._async_schedule_runtime_completion_check(now)
         else:
-            self._active_runtime_reason = None
             self._async_cancel_runtime_completion_check()
         self._async_clear_pending_load_state(self.is_load_on)
         self._grid_import_over_limit_since = None
@@ -1334,8 +1319,8 @@ class SolarLoadController:
     def _async_runtime_completion_check(self, now: datetime) -> None:
         """Force a decision refresh when the exact runtime target is reached."""
         self._runtime_completion_unsubscribe = None
-        if self._last_runtime_update is not None:
-            self._commit_active_runtime(now)
+        if self._tracker.is_tracking:
+            self._tracker.commit(now)
         self._async_update_grid_import_tracking(now)
         self._refresh_active_runtime_reason()
         self._async_update_low_assist_hold_support(now)
@@ -1456,10 +1441,10 @@ class SolarLoadController:
 
     async def _async_write_decision_log(self, record: dict[str, Any]) -> None:
         """Write one debug decision record in the executor."""
-        path = self.hass.config.path(DEBUG_DECISION_LOG_FILENAME)
+        path = self.hass.config.path(DECISION_LOG_FILENAME)
         try:
             await self.hass.async_add_executor_job(
-                _append_debug_decision_log,
+                append_decision_log,
                 path,
                 record,
             )
@@ -1486,8 +1471,8 @@ class SolarLoadController:
                 "title": self.entry.title,
             },
             "retention": {
-                "days": DEBUG_DECISION_LOG_RETENTION_DAYS,
-                "max_entries": DEBUG_DECISION_LOG_MAX_ENTRIES,
+                "days": DECISION_LOG_RETENTION_DAYS,
+                "max_entries": DECISION_LOG_MAX_ENTRIES,
             },
             "load": {
                 "entity_id": self.load_entity_id,
@@ -1689,60 +1674,10 @@ class SolarLoadController:
             return
         self._high_forecast_grid_import_since = None
 
-    def _runtime_today_seconds(self) -> float:
-        """Return committed and active runtime in seconds."""
-        return self._runtime_seconds + self._active_delta_seconds()
-
-    def _solar_runtime_today_seconds(self) -> float:
-        """Return committed and active solar runtime in seconds."""
-        if self._active_runtime_reason not in {
-            DECISION_SOLAR_SURPLUS_AVAILABLE,
-            DECISION_FORECAST_ASSISTED_RUN,
-            DECISION_LOW_FORECAST_ASSISTED_RUN,
-            DECISION_EXPORT_GUARD,
-        }:
-            return self._solar_runtime_seconds
-        return self._solar_runtime_seconds + self._active_delta_seconds()
-
-    def _forced_runtime_today_seconds(self) -> float:
-        """Return committed and active forced runtime in seconds."""
-        if self._active_runtime_reason != DECISION_MINIMUM_RUNTIME_REQUIRED:
-            return self._forced_runtime_seconds
-        return self._forced_runtime_seconds + self._active_delta_seconds()
-
-    def _active_delta_seconds(self, now: datetime | None = None) -> float:
-        """Return active runtime since the last committed update."""
-        if self._last_runtime_update is None:
-            return 0.0
-        now = now or dt_util.utcnow()
-        return max(0.0, (now - self._last_runtime_update).total_seconds())
-
-    def _commit_active_runtime(self, now: datetime | None = None) -> None:
-        """Commit active runtime into the daily counters."""
-        if self._last_runtime_update is None:
-            return
-
-        now = now or dt_util.utcnow()
-        delta_seconds = self._active_delta_seconds(now)
-        reason = self._active_runtime_reason
-
-        self._runtime_seconds += delta_seconds
-        if reason in {
-            DECISION_SOLAR_SURPLUS_AVAILABLE,
-            DECISION_FORECAST_ASSISTED_RUN,
-            DECISION_LOW_FORECAST_ASSISTED_RUN,
-            DECISION_EXPORT_GUARD,
-        }:
-            self._solar_runtime_seconds += delta_seconds
-        elif reason == DECISION_MINIMUM_RUNTIME_REQUIRED:
-            self._forced_runtime_seconds += delta_seconds
-
-        self._last_runtime_update = now
-
     def _refresh_active_runtime_reason(self) -> None:
         """Refresh the source category for the current active runtime interval."""
         if not self.is_load_on:
-            self._active_runtime_reason = None
+            self._tracker.set_reason(None)
             return
 
         reason = self.decision.reason
@@ -1753,7 +1688,7 @@ class SolarLoadController:
             DECISION_EXPORT_GUARD,
             DECISION_MINIMUM_RUNTIME_REQUIRED,
         }:
-            self._active_runtime_reason = reason
+            self._tracker.set_reason(reason)
 
     def _must_force_minimum_runtime(self, runtime_remaining_minutes: float) -> bool:
         """Return whether the runtime target must be forced now."""
@@ -1989,7 +1924,7 @@ class SolarLoadController:
             return False
         if (
             self.is_load_on
-            and self._active_runtime_reason == DECISION_LOW_FORECAST_ASSISTED_RUN
+            and self._tracker.active_runtime_reason == DECISION_LOW_FORECAST_ASSISTED_RUN
             and self._last_turned_on_at is not None
         ):
             min_on_minutes = _as_float(
@@ -2246,60 +2181,3 @@ def _parse_time(value: Any, default: str) -> time:
     if value != default:
         return _parse_time(default, default)
     return _FALLBACK_TIME
-
-
-def _append_debug_decision_log(path: str, record: dict[str, Any]) -> None:
-    """Append a decision debug record and prune old history.
-
-    Uses a module-level lock to prevent concurrent writes from the HA executor
-    thread pool corrupting the file.
-
-    Fast path: if the file has fewer lines than the maximum, just append — no
-    read required. Full read-filter-rewrite only happens when pruning is needed
-    (i.e. the file is at or near the entry limit or contains stale records).
-    """
-    new_line = json.dumps(record, separators=(",", ":")) + "\n"
-
-    with _DEBUG_LOG_LOCK:
-        # Count existing lines without parsing to decide if pruning is needed.
-        line_count = 0
-        try:
-            with open(path, encoding="utf-8") as file:
-                for _ in file:
-                    line_count += 1
-        except FileNotFoundError:
-            pass
-
-        if line_count < DEBUG_DECISION_LOG_MAX_ENTRIES - 1:
-            # Fast path: simply append; no pruning needed yet.
-            with open(path, "a", encoding="utf-8") as file:
-                file.write(new_line)
-            return
-
-        # Pruning path: read, filter by date and max count, rewrite.
-        cutoff_epoch = (
-            float(record["timestamp_epoch"]) - DEBUG_DECISION_LOG_RETENTION_DAYS * 86400
-        )
-        records: list[dict[str, Any]] = []
-        try:
-            with open(path, encoding="utf-8") as file:
-                for line in file:
-                    try:
-                        existing = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    timestamp_epoch = existing.get("timestamp_epoch")
-                    if not isinstance(timestamp_epoch, int | float):
-                        records.append(existing)
-                    elif timestamp_epoch >= cutoff_epoch:
-                        records.append(existing)
-        except FileNotFoundError:
-            pass
-
-        records.append(record)
-        records = records[-DEBUG_DECISION_LOG_MAX_ENTRIES:]
-
-        with open(path, "w", encoding="utf-8") as file:
-            for item in records:
-                file.write(json.dumps(item, separators=(",", ":")))
-                file.write("\n")
