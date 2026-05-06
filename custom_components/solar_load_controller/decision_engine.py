@@ -13,6 +13,8 @@ from .const import (
     DECISION_FORECAST_ASSISTED_RUN,
     DECISION_FORECAST_WAIT,
     DECISION_GRID_IMPORT_LIMIT_EXCEEDED,
+    DECISION_LOW_FORECAST_ASSISTED_RUN,
+    DECISION_LOW_FORECAST_WAIT,
     DECISION_MINIMUM_OFF_TIME_ACTIVE,
     DECISION_MINIMUM_ON_TIME_ACTIVE,
     DECISION_MINIMUM_RUNTIME_REACHED,
@@ -58,6 +60,17 @@ class DecisionInputs:
     runtime_remaining_minutes: float
     required_remaining_energy_kwh: float
     minutes_until_finish: float
+    low_mode_runtime_progress: float
+    low_mode_runtime_pressure: float
+    low_mode_runtime_slack_minutes: float
+    low_mode_runtime_wait_buffer_minutes: float
+    low_mode_forecast_wait_threshold_kwh: float
+    low_mode_assisted_surplus_threshold_w: float
+    low_mode_assisted_effective_surplus_threshold_w: float
+    low_mode_assisted_start_surplus_w: float
+    low_mode_assisted_strength_ratio: float
+    low_mode_assisted_priority: float
+    low_mode_assisted_forecast_threshold_kwh: float
     min_on_active: bool
     min_on_remaining_minutes: float
     min_off_active: bool
@@ -75,7 +88,9 @@ class DecisionInputs:
     high_forecast_grid_import_active: bool
     high_forecast_grid_import_duration_seconds: float
     high_forecast_grid_import_shutdown_delay_seconds: float
+    runtime_force_latched: bool
     must_force_minimum_runtime: bool
+    min_runtime_battery_override: bool
     min_runtime_grid_override: bool
     projected_grid_import_exceeds_limit: bool
     battery_can_support_forced_runtime: bool
@@ -124,12 +139,12 @@ def evaluate_decision(inputs: DecisionInputs) -> DecisionResult:
     if inputs.automation_paused:
         should_run = False
         reason = DECISION_AUTOMATION_PAUSED
-    elif not inputs.inside_time_window:
-        should_run = False
-        reason = DECISION_TIME_WINDOW_BLOCKED
     elif inputs.missing_required_grid_sensor_value:
         should_run = False
         reason = DECISION_MISSING_REQUIRED_SENSOR
+    elif not inputs.inside_time_window:
+        should_run = False
+        reason = DECISION_TIME_WINDOW_BLOCKED
     elif inputs.is_load_on and inputs.min_on_active:
         should_run = True
         reason = DECISION_MINIMUM_ON_TIME_ACTIVE
@@ -174,7 +189,10 @@ def evaluate_decision(inputs: DecisionInputs) -> DecisionResult:
         reason = DECISION_SOLAR_SURPLUS_AVAILABLE
     elif inputs.forecast_assisted_run_available:
         should_run = True
-        reason = DECISION_FORECAST_ASSISTED_RUN
+        if inputs.forecast_day_class == "low":
+            reason = DECISION_LOW_FORECAST_ASSISTED_RUN
+        else:
+            reason = DECISION_FORECAST_ASSISTED_RUN
     elif inputs.must_force_minimum_runtime:
         if (
             inputs.projected_grid_import_exceeds_limit
@@ -184,7 +202,7 @@ def evaluate_decision(inputs: DecisionInputs) -> DecisionResult:
             reason = DECISION_GRID_IMPORT_LIMIT_EXCEEDED
         elif (
             not inputs.battery_can_support_forced_runtime
-            and not inputs.min_runtime_grid_override
+            and not _minimum_runtime_overrides_battery(inputs)
         ):
             should_run = False
             reason = DECISION_BATTERY_PROTECTED
@@ -193,7 +211,10 @@ def evaluate_decision(inputs: DecisionInputs) -> DecisionResult:
             reason = DECISION_MINIMUM_RUNTIME_REQUIRED
     elif inputs.should_wait_for_forecast:
         should_run = False
-        reason = DECISION_FORECAST_WAIT
+        if inputs.forecast_day_class == "low":
+            reason = DECISION_LOW_FORECAST_WAIT
+        else:
+            reason = DECISION_FORECAST_WAIT
     else:
         should_run = False
         reason = DECISION_WAITING_FOR_SURPLUS
@@ -277,9 +298,9 @@ def _build_checks(inputs: DecisionInputs) -> tuple[DecisionCheck, ...]:
             or inputs.min_runtime_grid_override,
         ),
         DecisionCheck(
-            "battery_allows_forced_runtime",
+            "minimum_runtime_battery_override",
             inputs.battery_can_support_forced_runtime
-            or inputs.min_runtime_grid_override,
+            or _minimum_runtime_overrides_battery(inputs),
         ),
         DecisionCheck("wait_for_forecast", inputs.should_wait_for_forecast),
     )
@@ -308,6 +329,8 @@ def _build_summary(inputs: DecisionInputs, should_run: bool, reason: str) -> str
             return "runtime_force: minimum runtime overrides min_off"
         if inputs.projected_grid_import_exceeds_limit:
             return "runtime_force: minimum runtime overrides grid limit"
+        if not inputs.battery_can_support_forced_runtime:
+            return "runtime_force: minimum runtime overrides battery protection"
         return "runtime_force: minimum runtime required"
     if reason == DECISION_EXPORT_GUARD:
         return "export_guard: preventing forecast clipping"
@@ -315,8 +338,12 @@ def _build_summary(inputs: DecisionInputs, should_run: bool, reason: str) -> str
         return "solar: surplus covers load"
     if reason == DECISION_FORECAST_ASSISTED_RUN:
         return "forecast_run: high forecast with partial surplus"
+    if reason == DECISION_LOW_FORECAST_ASSISTED_RUN:
+        return "low_assist: partial solar with forecast support"
     if reason == DECISION_FORECAST_WAIT:
         return "forecast: waiting for forecast"
+    if reason == DECISION_LOW_FORECAST_WAIT:
+        return "low_wait: waiting for better low-day solar"
     if reason == DECISION_MINIMUM_RUNTIME_REACHED:
         return "runtime_met: minimum runtime reached"
     if reason == DECISION_TIME_WINDOW_BLOCKED:
@@ -332,3 +359,8 @@ def _build_summary(inputs: DecisionInputs, should_run: bool, reason: str) -> str
 def _minimum_runtime_overrides_grid(inputs: DecisionInputs) -> bool:
     """Return whether minimum runtime may ignore grid import protection."""
     return inputs.must_force_minimum_runtime and inputs.min_runtime_grid_override
+
+
+def _minimum_runtime_overrides_battery(inputs: DecisionInputs) -> bool:
+    """Return whether minimum runtime may ignore battery protection."""
+    return inputs.must_force_minimum_runtime and inputs.min_runtime_battery_override

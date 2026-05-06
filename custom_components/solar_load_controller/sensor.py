@@ -23,6 +23,8 @@ from .const import (
     DECISION_FORECAST_ASSISTED_RUN,
     DECISION_FORECAST_WAIT,
     DECISION_GRID_IMPORT_LIMIT_EXCEEDED,
+    DECISION_LOW_FORECAST_ASSISTED_RUN,
+    DECISION_LOW_FORECAST_WAIT,
     DECISION_MINIMUM_OFF_TIME_ACTIVE,
     DECISION_MINIMUM_ON_TIME_ACTIVE,
     DECISION_MINIMUM_RUNTIME_REACHED,
@@ -43,6 +45,8 @@ DECISION_REASON_OPTIONS = [
     DECISION_EXPORT_GUARD,
     DECISION_FORECAST_ASSISTED_RUN,
     DECISION_FORECAST_WAIT,
+    DECISION_LOW_FORECAST_ASSISTED_RUN,
+    DECISION_LOW_FORECAST_WAIT,
     DECISION_GRID_IMPORT_LIMIT_EXCEEDED,
     DECISION_BATTERY_PROTECTED,
     DECISION_BATTERY_PRIORITY,
@@ -182,7 +186,6 @@ class SolarLoadRuntimeRemainingTodaySensor(SolarLoadBaseSensor):
     def native_value(self) -> float:
         """Return remaining runtime target in minutes."""
         return self.controller.runtime_remaining_today_minutes
-
 
 class SolarLoadEnergyTodaySensor(SolarLoadBaseSensor):
     """Sensor that estimates today's load energy use."""
@@ -381,6 +384,9 @@ class SolarLoadDecisionReasonSensor(SolarLoadBaseSensor):
             ),
             "load_power_w": self.controller.load_power_w,
             "runtime_remaining_minutes": decision.runtime_remaining_minutes,
+            "min_runtime_battery_override": (
+                self.controller.min_runtime_battery_override
+            ),
             "min_runtime_grid_override": self.controller.min_runtime_grid_override,
             "required_remaining_energy_kwh": self.controller.required_remaining_energy_kwh,
             "battery_soc": self.controller.battery_soc,
