@@ -208,15 +208,17 @@ Decision states are intentionally short English values:
 
 ## Entities
 
-The entity IDs include the configured integration name. Entity names and state
-values are kept in English.
+The entity IDs include the configured integration name.
+
+- Entity display names are localized through Home Assistant translations.
+- Technical state identifiers such as decision reasons remain stable in English.
 
 - `switch.<name>_automation_paused`
 - `select.<name>_forecast_day_mode_override`
 - `sensor.<name>_runtime_today`
 - `sensor.<name>_runtime_remaining_today`
 - `sensor.<name>_energy_today`
-- `sensor.<name>_automatic_switch_cycles_today`
+- `sensor.<name>_switch_cycles_today`
 - `sensor.<name>_solar_runtime_today`
 - `sensor.<name>_forced_runtime_today`
 - `sensor.<name>_available_surplus`

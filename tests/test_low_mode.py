@@ -223,7 +223,7 @@ class LowModeHelperTest(unittest.TestCase):
 
     def test_assisted_run_priority_grows_later_in_the_day(self) -> None:
         """Later low-mode progress should make assisted starts more aggressive."""
-        self.assertEqual(round(assisted_run_priority(0.5, exponent=2.4), 3), 0.189)
+        self.assertEqual(round(assisted_run_priority(0.5, exponent=0.65), 3), 0.637)
 
     def test_late_assist_priority_can_lower_required_surplus(self) -> None:
         """Later low-mode assist may accept a meaningfully smaller current solar share."""
@@ -353,12 +353,16 @@ class LowModeHelperTest(unittest.TestCase):
                 forecast_next_hour_kwh=0.8,
                 forecast_wait_threshold_kwh=0.7,
                 effective_solar_surplus_w=250.0,
+                current_effective_solar_surplus_w=250.0,
                 required_surplus_w=200.0,
                 assist_priority=0.0,
                 forecast_override_ratio_span=1.0,
                 forecast_override_exponent=2.4,
                 surplus_late_relief_ratio=0.45,
                 forecast_late_relief_ratio=0.8,
+                hold_surplus_ratio=0.8,
+                hold_forecast_ratio=0.75,
+                collapse_floor_ratio=0.3,
             )
         )
 
@@ -373,12 +377,16 @@ class LowModeHelperTest(unittest.TestCase):
                 forecast_next_hour_kwh=0.8,
                 forecast_wait_threshold_kwh=0.7,
                 effective_solar_surplus_w=250.0,
+                current_effective_solar_surplus_w=250.0,
                 required_surplus_w=200.0,
                 assist_priority=0.0,
                 forecast_override_ratio_span=1.0,
                 forecast_override_exponent=2.4,
                 surplus_late_relief_ratio=0.45,
                 forecast_late_relief_ratio=0.8,
+                hold_surplus_ratio=0.8,
+                hold_forecast_ratio=0.75,
+                collapse_floor_ratio=0.3,
             )
         )
         self.assertFalse(
@@ -390,12 +398,88 @@ class LowModeHelperTest(unittest.TestCase):
                 forecast_next_hour_kwh=0.8,
                 forecast_wait_threshold_kwh=0.7,
                 effective_solar_surplus_w=250.0,
+                current_effective_solar_surplus_w=250.0,
                 required_surplus_w=200.0,
                 assist_priority=0.0,
                 forecast_override_ratio_span=1.0,
                 forecast_override_exponent=2.4,
                 surplus_late_relief_ratio=0.45,
                 forecast_late_relief_ratio=0.8,
+                hold_surplus_ratio=0.8,
+                hold_forecast_ratio=0.75,
+                collapse_floor_ratio=0.3,
+            )
+        )
+
+    def test_assisted_run_hold_uses_lower_surplus_hysteresis_than_start(self) -> None:
+        """Running assist should survive a moderate dip below the start threshold."""
+        self.assertTrue(
+            should_keep_assisted_run(
+                minutes_since_turn_on=1.2,
+                configured_min_on_minutes=1.0,
+                assisted_hold_minutes=3.0,
+                projected_grid_import_exceeds_limit=False,
+                forecast_next_hour_kwh=0.32,
+                forecast_wait_threshold_kwh=0.4,
+                effective_solar_surplus_w=170.0,
+                current_effective_solar_surplus_w=170.0,
+                required_surplus_w=200.0,
+                assist_priority=0.0,
+                forecast_override_ratio_span=1.0,
+                forecast_override_exponent=2.4,
+                surplus_late_relief_ratio=0.45,
+                forecast_late_relief_ratio=0.8,
+                hold_surplus_ratio=0.8,
+                hold_forecast_ratio=0.75,
+                collapse_floor_ratio=0.3,
+            )
+        )
+
+    def test_assisted_run_hold_still_stops_when_support_drops_too_far(self) -> None:
+        """Hold hysteresis should still stop if assist support falls well below the hold floor."""
+        self.assertFalse(
+            should_keep_assisted_run(
+                minutes_since_turn_on=1.2,
+                configured_min_on_minutes=1.0,
+                assisted_hold_minutes=3.0,
+                projected_grid_import_exceeds_limit=False,
+                forecast_next_hour_kwh=0.5,
+                forecast_wait_threshold_kwh=0.4,
+                effective_solar_surplus_w=150.0,
+                current_effective_solar_surplus_w=150.0,
+                required_surplus_w=200.0,
+                assist_priority=0.0,
+                forecast_override_ratio_span=1.0,
+                forecast_override_exponent=2.4,
+                surplus_late_relief_ratio=0.45,
+                forecast_late_relief_ratio=0.8,
+                hold_surplus_ratio=0.8,
+                hold_forecast_ratio=0.75,
+                collapse_floor_ratio=0.3,
+            )
+        )
+
+    def test_assisted_run_hold_stops_on_real_support_collapse_even_with_smoothed_memory(self) -> None:
+        """A running assist should still stop if current support collapses to near zero."""
+        self.assertFalse(
+            should_keep_assisted_run(
+                minutes_since_turn_on=1.2,
+                configured_min_on_minutes=1.0,
+                assisted_hold_minutes=3.0,
+                projected_grid_import_exceeds_limit=False,
+                forecast_next_hour_kwh=0.5,
+                forecast_wait_threshold_kwh=0.4,
+                effective_solar_surplus_w=250.0,
+                current_effective_solar_surplus_w=1.0,
+                required_surplus_w=200.0,
+                assist_priority=0.0,
+                forecast_override_ratio_span=1.0,
+                forecast_override_exponent=2.4,
+                surplus_late_relief_ratio=0.45,
+                forecast_late_relief_ratio=0.8,
+                hold_surplus_ratio=0.8,
+                hold_forecast_ratio=0.75,
+                collapse_floor_ratio=0.3,
             )
         )
 

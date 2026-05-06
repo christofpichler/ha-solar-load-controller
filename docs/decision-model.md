@@ -219,6 +219,11 @@ Low mode currently has three main phases:
    - once waiting is no longer responsible, it falls through toward
      `runtime_force`
 
+Once `runtime_force` begins, the controller latches that mode until the minimum
+runtime target is actually reached or automation is paused. It also schedules
+an exact completion callback at the projected runtime-complete timestamp, so
+the load can stop at the target instead of waiting for a later periodic update.
+
 ### Key helpers
 
 In [low_mode.py](/Users/A200029998/Documents/pool-automation/custom_components/solar_load_controller/low_mode.py):
@@ -231,6 +236,14 @@ In [low_mode.py](/Users/A200029998/Documents/pool-automation/custom_components/s
 - `assisted_run_surplus_threshold_w(...)`
 - `should_allow_assisted_run(...)`
 - `should_keep_assisted_run(...)`
+
+The assisted-run hold path is intentionally more tolerant than the assisted-run
+start path:
+
+- start decisions use the current raw effective solar support
+- hold decisions use a short decaying remembered support value
+- hold decisions apply lower surplus and forecast thresholds than fresh starts
+- hold decisions still stop immediately if raw current support collapses too far
 
 ### Low-mode tuning constants
 
@@ -272,8 +285,44 @@ solar window.
     because runtime pressure is higher
 - `LOW_FORECAST_ASSISTED_HOLD_MINUTES = 3.0`
   - once started via `low_assist`, the controller will hold the run for a short
-    additional window, as long as the projected grid state stays clean and the
-    next-hour forecast still justifies it
+    additional window before the stricter hold logic may release it
+- `LOW_FORECAST_ASSISTED_PRIORITY_EXPONENT = 0.65`
+  - shapes a concave low-assist priority curve
+  - values below `1.0` make assist rise earlier and then flatten later in the
+    day
+- `LOW_FORECAST_ASSISTED_SURPLUS_LATE_RELIEF_RATIO = 0.6`
+  - controls how far the current-solar assist threshold may relax later in the
+    day
+- `LOW_FORECAST_ASSISTED_FORECAST_OVERRIDE_RATIO_SPAN = 1.0`
+  - defines how much stronger current solar must be than the assist threshold
+    before the weak-next-hour forecast hurdle starts fading rapidly
+- `LOW_FORECAST_ASSISTED_FORECAST_OVERRIDE_EXPONENT = 2.4`
+  - shapes how quickly strong current solar suppresses the next-hour forecast
+    veto
+- `LOW_FORECAST_ASSISTED_FORECAST_LATE_RELIEF_RATIO = 0.9`
+  - controls how much later-day priority can lower the forecast hurdle even
+    before current solar becomes very strong
+
+#### Assisted-run hold hysteresis
+
+- `LOW_FORECAST_ASSISTED_HOLD_SURPLUS_RATIO = 0.8`
+  - a running assisted load only needs to keep 80% of the normal assisted
+    surplus threshold
+- `LOW_FORECAST_ASSISTED_HOLD_FORECAST_RATIO = 0.75`
+  - a running assisted load only needs to keep 75% of the normal assisted
+    forecast threshold
+- `LOW_FORECAST_ASSISTED_HOLD_COLLAPSE_RATIO = 0.3`
+  - if raw current assist support falls below 30% of the effective assist
+    threshold, the assisted run is treated as collapsed and is released
+- `LOW_FORECAST_ASSISTED_HOLD_SUPPORT_TIME_CONSTANT_SECONDS = 90.0`
+  - the remembered assist support decays over roughly 90 seconds, which helps
+    absorb short measurement dips without turning hold logic into a blind timer
+
+Together these constants mean:
+
+- low assist still starts conservatively
+- once active, it is allowed to ride through moderate dips
+- but it still exits when current support genuinely collapses
 
 ### Low-mode config inputs
 

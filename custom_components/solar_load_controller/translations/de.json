@@ -271,8 +271,8 @@
       }
     },
     "switch": {
-      "automation_paused": {
-        "name": "Automatik pausiert"
+      "automation_enabled": {
+        "name": "Automatik aktiviert"
       }
     },
     "select": {

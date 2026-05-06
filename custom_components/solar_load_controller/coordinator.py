@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+import math
+import threading
 from collections.abc import Callable
 from datetime import date, datetime, time, timedelta
 from typing import Any
@@ -17,6 +19,7 @@ from homeassistant.helpers.event import (
     async_track_time_change,
     async_track_time_interval,
 )
+from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from .battery import classify_battery_power, normalize_battery_power
@@ -100,6 +103,8 @@ from .low_mode import (
 
 _LOGGER = logging.getLogger(__name__)
 
+# Intentionally set to 0 (disabled). The cooldown infrastructure exists for
+# future use but currently has no practical effect on restart behavior.
 GRID_IMPORT_RESTART_COOLDOWN = timedelta(seconds=0)
 GRID_IMPORT_SHUTDOWN_DELAY = timedelta(seconds=15)
 GRID_IMPORT_START_MARGIN_W = 50
@@ -121,15 +126,24 @@ LOW_FORECAST_WAIT_THRESHOLD_MAX_MULTIPLIER = 1.75
 LOW_FORECAST_ASSISTED_SURPLUS_EARLY_RATIO = 0.85
 LOW_FORECAST_ASSISTED_SURPLUS_LATE_RATIO = 0.35
 LOW_FORECAST_ASSISTED_HOLD_MINUTES = 3.0
-LOW_FORECAST_ASSISTED_PRIORITY_EXPONENT = 3.0
+LOW_FORECAST_ASSISTED_PRIORITY_EXPONENT = 0.65
 LOW_FORECAST_ASSISTED_SURPLUS_LATE_RELIEF_RATIO = 0.6
 LOW_FORECAST_ASSISTED_FORECAST_OVERRIDE_RATIO_SPAN = 1.0
 LOW_FORECAST_ASSISTED_FORECAST_OVERRIDE_EXPONENT = 2.4
 LOW_FORECAST_ASSISTED_FORECAST_LATE_RELIEF_RATIO = 0.9
+LOW_FORECAST_ASSISTED_HOLD_SURPLUS_RATIO = 0.8
+LOW_FORECAST_ASSISTED_HOLD_FORECAST_RATIO = 0.75
+LOW_FORECAST_ASSISTED_HOLD_COLLAPSE_RATIO = 0.3
+LOW_FORECAST_ASSISTED_HOLD_SUPPORT_TIME_CONSTANT_SECONDS = 90.0
 PENDING_LOAD_STATE_TIMEOUT = timedelta(seconds=30)
 DEBUG_DECISION_LOG_FILENAME = "solar_load_controller_decisions.jsonl"
 DEBUG_DECISION_LOG_RETENTION_DAYS = 7
 DEBUG_DECISION_LOG_MAX_ENTRIES = 2000
+# Lock protects the JSONL file against concurrent writes from the HA executor thread pool.
+_DEBUG_LOG_LOCK = threading.Lock()
+
+# Storage schema version for the persistent runtime-latch state.
+_PERSIST_STORE_VERSION = 1
 
 DEBUG_STATE_CONFIG_KEYS = (
     CONF_LOAD_SWITCH,
@@ -169,6 +183,8 @@ class SolarLoadController:
         self._forced_runtime_seconds = 0.0
         self._runtime_force_latched = False
         self._active_runtime_reason: str | None = None
+        self._low_assist_hold_support_w = 0.0
+        self._low_assist_hold_support_updated_at: datetime | None = None
         self._switch_cycles = 0
         self._last_runtime_update: datetime | None = None
         self._last_turned_off_at: datetime | None = None
@@ -183,6 +199,13 @@ class SolarLoadController:
 
         self._listeners: set[Callable[[], None]] = set()
         self._unsubscribers: list[Callable[[], None]] = []
+
+        # Persistent storage for state that must survive HA restarts (latch, timestamps).
+        self._store: Store = Store(
+            hass,
+            _PERSIST_STORE_VERSION,
+            f"solar_load_controller_{entry.entry_id}_state",
+        )
 
     async def async_start(self) -> None:
         """Start tracking load and input sensor changes."""
@@ -234,6 +257,10 @@ class SolarLoadController:
 
         self._capture_daily_forecast_if_needed()
 
+        # Restore latched runtime state from previous session before the first
+        # decision so the forced-runtime latch survives a mid-day HA restart.
+        await self.async_load_persist_state()
+
         if self.is_load_on:
             now = dt_util.utcnow()
             self._last_runtime_update = now
@@ -262,7 +289,9 @@ class SolarLoadController:
         """Set whether automatic control is paused."""
         self.automation_paused = paused
         if paused:
-            self._runtime_force_latched = False
+            if self._runtime_force_latched:
+                self._runtime_force_latched = False
+                self.hass.async_create_task(self._async_save_persist_state())
             self._async_cancel_runtime_completion_check()
         elif self.is_load_on:
             self._async_schedule_runtime_completion_check()
@@ -303,6 +332,62 @@ class SolarLoadController:
             self._switch_cycles = max(0, int(value))
 
         self._async_notify_listeners()
+
+    async def async_load_persist_state(self) -> None:
+        """Restore persisted runtime-latch state after a Home Assistant restart.
+
+        Only restores data that belongs to the current calendar day.  Stale data
+        from a previous day is discarded so a new day always starts clean.
+
+        Restored fields
+        ---------------
+        * ``_runtime_force_latched`` – ensures an in-progress forced runtime
+          run survives a mid-day HA restart.
+        * ``_last_turned_off_at`` – preserves the min-off timer context so the
+          pump does not turn on too soon immediately after restart.
+        """
+        data = await self._store.async_load()
+        if not isinstance(data, dict):
+            return
+        if data.get("date") != today().isoformat():
+            # Stale data from a previous day – start clean.
+            await self._store.async_remove()
+            return
+
+        self._runtime_force_latched = bool(data.get("runtime_force_latched", False))
+
+        if (raw := data.get("last_turned_off_at")) is not None:
+            try:
+                parsed = dt_util.parse_datetime(raw)
+                if parsed is not None:
+                    self._last_turned_off_at = parsed
+            except (TypeError, ValueError):
+                pass
+
+        if self._runtime_force_latched:
+            _LOGGER.debug(
+                "Restored runtime_force_latched=True from persistent storage "
+                "(last_turned_off_at=%s)",
+                self._last_turned_off_at,
+            )
+
+    async def _async_save_persist_state(self) -> None:
+        """Save runtime-latch state to persistent storage.
+
+        Called whenever ``_runtime_force_latched`` or ``_last_turned_off_at``
+        change so the state survives a Home Assistant restart.
+        """
+        await self._store.async_save(
+            {
+                "date": today().isoformat(),
+                "runtime_force_latched": self._runtime_force_latched,
+                "last_turned_off_at": (
+                    self._last_turned_off_at.isoformat()
+                    if self._last_turned_off_at is not None
+                    else None
+                ),
+            }
+        )
 
     @property
     def is_load_on(self) -> bool:
@@ -513,6 +598,23 @@ class SolarLoadController:
         return round(self.available_surplus_w + self.usable_battery_charge_w, 1)
 
     @property
+    def low_mode_assisted_hold_support_w(self) -> float:
+        """Return a smoothed support signal for keeping an assist run alive."""
+        if not (
+            self.is_load_on
+            and self._active_runtime_reason == DECISION_LOW_FORECAST_ASSISTED_RUN
+        ):
+            return self.low_mode_assisted_start_surplus_w
+
+        return round(
+            max(
+                self.low_mode_assisted_start_surplus_w,
+                self._decayed_low_assist_hold_support_w(),
+            ),
+            1,
+        )
+
+    @property
     def low_mode_assisted_strength_ratio(self) -> float:
         """Return how strongly the current low-assist threshold is exceeded."""
         return low_mode_assisted_run_strength_ratio(
@@ -549,6 +651,53 @@ class SolarLoadController:
             exponent=LOW_FORECAST_ASSISTED_FORECAST_OVERRIDE_EXPONENT,
             late_relief_ratio=LOW_FORECAST_ASSISTED_FORECAST_LATE_RELIEF_RATIO,
         )
+
+    def _decayed_low_assist_hold_support_w(
+        self,
+        now: datetime | None = None,
+    ) -> float:
+        """Return the decayed remembered support of the current assist run."""
+        if (
+            self._low_assist_hold_support_updated_at is None
+            or self._low_assist_hold_support_w <= 0
+        ):
+            return 0.0
+
+        now = now or dt_util.utcnow()
+        elapsed_seconds = max(
+            0.0,
+            (
+                now - self._low_assist_hold_support_updated_at
+            ).total_seconds(),
+        )
+        tau = max(
+            1.0,
+            LOW_FORECAST_ASSISTED_HOLD_SUPPORT_TIME_CONSTANT_SECONDS,
+        )
+        return self._low_assist_hold_support_w * math.exp(-elapsed_seconds / tau)
+
+    @callback
+    def _async_update_low_assist_hold_support(
+        self,
+        now: datetime | None = None,
+    ) -> None:
+        """Update the remembered support level of an active low-assist run."""
+        now = now or dt_util.utcnow()
+        if not (
+            self.is_load_on
+            and self._active_runtime_reason == DECISION_LOW_FORECAST_ASSISTED_RUN
+        ):
+            self._low_assist_hold_support_w = 0.0
+            self._low_assist_hold_support_updated_at = None
+            return
+
+        current_support_w = self.low_mode_assisted_start_surplus_w
+        remembered_support_w = self._decayed_low_assist_hold_support_w(now)
+        self._low_assist_hold_support_w = max(
+            current_support_w,
+            remembered_support_w,
+        )
+        self._low_assist_hold_support_updated_at = now
 
     @property
     def grid_import_limit_w(self) -> float:
@@ -650,13 +799,13 @@ class SolarLoadController:
 
     @property
     def min_runtime_battery_override(self) -> bool:
-        """Return whether guaranteed runtime may exceed battery protection."""
-        return bool(
-            self.config.get(
-                CONF_MIN_RUNTIME_BATTERY_OVERRIDE,
-                self.min_runtime_grid_override,
-            )
-        )
+        """Return whether guaranteed runtime may exceed battery protection.
+
+        Defaults to False independently of min_runtime_grid_override so that
+        enabling grid override does not silently disable battery protection.
+        Both overrides must be configured explicitly if both are wanted.
+        """
+        return bool(self.config.get(CONF_MIN_RUNTIME_BATTERY_OVERRIDE, False))
 
     @property
     def runtime_remaining_today_minutes(self) -> float:
@@ -1050,6 +1199,7 @@ class SolarLoadController:
             self._capture_daily_forecast_if_needed()
             self._async_update_grid_import_tracking()
             self._refresh_active_runtime_reason()
+            self._async_update_low_assist_hold_support()
             self._async_notify_listeners()
             self.hass.async_create_task(self._async_apply_decision())
 
@@ -1086,12 +1236,16 @@ class SolarLoadController:
                 or self.runtime_remaining_today_minutes <= 0
             ):
                 self._runtime_force_latched = False
+            # Persist the updated latch + turn-off time so a restart immediately
+            # after the pump stops still sees the correct min-off / latch state.
+            self.hass.async_create_task(self._async_save_persist_state())
 
         if old_is_on != new_is_on:
             self._async_clear_pending_load_state()
         else:
             self._async_clear_pending_load_state(new_is_on)
         self._async_update_grid_import_tracking()
+        self._async_update_low_assist_hold_support()
         if old_is_on != new_is_on and change_source == "manual":
             self._async_log_manual_load_change(new_is_on)
         self._async_notify_listeners()
@@ -1109,6 +1263,7 @@ class SolarLoadController:
         self._capture_daily_forecast_if_needed()
         self._async_update_grid_import_tracking(now)
         self._refresh_active_runtime_reason()
+        self._async_update_low_assist_hold_support(now)
         self._async_notify_listeners()
         self.hass.async_create_task(self._async_apply_decision())
 
@@ -1138,6 +1293,11 @@ class SolarLoadController:
         self._daily_forecast_today_kwh = None
         self._daily_forecast_kwh_per_kwp = None
         self._daily_forecast_day_class = "unknown"
+        self._low_assist_hold_support_w = 0.0
+        self._low_assist_hold_support_updated_at = None
+        # Persist the cleared latch immediately so the new day's storage is
+        # written before any restart could replay yesterday's forced-run latch.
+        self.hass.async_create_task(self._async_save_persist_state())
         self._async_notify_listeners()
         self.hass.async_create_task(self._async_apply_decision())
 
@@ -1178,6 +1338,7 @@ class SolarLoadController:
             self._commit_active_runtime(now)
         self._async_update_grid_import_tracking(now)
         self._refresh_active_runtime_reason()
+        self._async_update_low_assist_hold_support(now)
         self._async_notify_listeners()
         self.hass.async_create_task(self._async_apply_decision())
 
@@ -1195,6 +1356,10 @@ class SolarLoadController:
 
         self._applying_decision = True
         try:
+            # Capture latch state BEFORE self.decision is evaluated.
+            # self.decision → _must_force_minimum_runtime can clear the latch
+            # (runtime_remaining <= 0), so capturing after would miss the change.
+            _latch_before = self._runtime_force_latched
             decision = self.decision
             if (
                 decision.should_run
@@ -1209,6 +1374,8 @@ class SolarLoadController:
                 }
             ):
                 self._runtime_force_latched = False
+            if self._runtime_force_latched != _latch_before:
+                self.hass.async_create_task(self._async_save_persist_state())
             self._async_log_decision_if_changed(decision)
             if decision.reason == DECISION_AUTOMATION_PAUSED and not self.is_load_on:
                 return
@@ -1219,6 +1386,13 @@ class SolarLoadController:
 
             domain, _, _object_id = self.load_entity_id.partition(".")
             if domain not in {"switch", "input_boolean"}:
+                _LOGGER.warning(
+                    "Load entity '%s' has unsupported domain '%s'. "
+                    "Only 'switch' and 'input_boolean' are supported. "
+                    "No service call will be made.",
+                    self.load_entity_id,
+                    domain,
+                )
                 return
 
             service = "turn_on" if decision.should_run else "turn_off"
@@ -1383,6 +1557,18 @@ class SolarLoadController:
                 ),
                 "low_forecast_assisted_forecast_late_relief_ratio": (
                     LOW_FORECAST_ASSISTED_FORECAST_LATE_RELIEF_RATIO
+                ),
+                "low_forecast_assisted_hold_surplus_ratio": (
+                    LOW_FORECAST_ASSISTED_HOLD_SURPLUS_RATIO
+                ),
+                "low_forecast_assisted_hold_forecast_ratio": (
+                    LOW_FORECAST_ASSISTED_HOLD_FORECAST_RATIO
+                ),
+                "low_forecast_assisted_hold_collapse_ratio": (
+                    LOW_FORECAST_ASSISTED_HOLD_COLLAPSE_RATIO
+                ),
+                "low_forecast_assisted_hold_support_time_constant_seconds": (
+                    LOW_FORECAST_ASSISTED_HOLD_SUPPORT_TIME_CONSTANT_SECONDS
                 ),
                 "high_mode_base_household_load_w": (
                     self.high_mode_base_household_load_w
@@ -1817,7 +2003,8 @@ class SolarLoadController:
                 projected_grid_import_exceeds_limit=self._projected_grid_import_exceeds_limit,
                 forecast_next_hour_kwh=self._forecast_next_hour_kwh,
                 forecast_wait_threshold_kwh=self.low_mode_forecast_wait_threshold_kwh,
-                effective_solar_surplus_w=self.low_mode_assisted_start_surplus_w,
+                effective_solar_surplus_w=self.low_mode_assisted_hold_support_w,
+                current_effective_solar_surplus_w=self.low_mode_assisted_start_surplus_w,
                 required_surplus_w=self.low_mode_assisted_surplus_threshold_w,
                 assist_priority=self.low_mode_assisted_priority,
                 forecast_override_ratio_span=(
@@ -1832,6 +2019,9 @@ class SolarLoadController:
                 forecast_late_relief_ratio=(
                     LOW_FORECAST_ASSISTED_FORECAST_LATE_RELIEF_RATIO
                 ),
+                hold_surplus_ratio=LOW_FORECAST_ASSISTED_HOLD_SURPLUS_RATIO,
+                hold_forecast_ratio=LOW_FORECAST_ASSISTED_HOLD_FORECAST_RATIO,
+                collapse_floor_ratio=LOW_FORECAST_ASSISTED_HOLD_COLLAPSE_RATIO,
             )
         if self.available_surplus_w >= self.load_power_w:
             return False
@@ -1861,8 +2051,6 @@ class SolarLoadController:
     @property
     def _export_guard_run_available(self) -> bool:
         """Return whether forecast suggests running now to avoid clipping later."""
-        if not self._forecast_enabled:
-            return False
         if self.forecast_day_class != FORECAST_DAY_MODE_HIGH:
             return False
         if (
@@ -1895,10 +2083,13 @@ class SolarLoadController:
         ):
             return False
 
+        # Allow export_guard when forecast has enough headroom over battery needs,
+        # even without real-time surplus at this moment.
+        # available_surplus_w >= load_power_w is already handled above (returns True early),
+        # so that condition must not be repeated here.
         return (
             forecast_remaining_kwh
             >= battery_charge_required_kwh * HIGH_FORECAST_CURTAILMENT_HEADROOM_RATIO
-            and self.available_surplus_w >= self.load_power_w
         )
 
     def _should_prioritize_battery_after_runtime(self) -> bool:
@@ -1964,29 +2155,18 @@ class SolarLoadController:
         )
 
     @property
-    def _forecast_enabled(self) -> bool:
-        """Return whether forecast logic is enabled."""
-        return True
-
-    @property
     def _forecast_remaining_kwh(self) -> float | None:
         """Return remaining forecast energy today in kWh."""
-        if not self._forecast_enabled:
-            return None
         return self._energy_sensor_kwh(self.config.get(CONF_FORECAST_REMAINING_TODAY_SENSOR))
 
     @property
     def _forecast_today_kwh(self) -> float | None:
         """Return forecast energy for today in kWh."""
-        if not self._forecast_enabled:
-            return None
         return self._energy_sensor_kwh(self.config.get(CONF_FORECAST_TODAY_SENSOR))
 
     @property
     def _forecast_next_hour_kwh(self) -> float | None:
         """Return forecast energy for the next hour in kWh."""
-        if not self._forecast_enabled:
-            return None
         return self._energy_sensor_kwh(self.config.get(CONF_FORECAST_NEXT_HOUR_SENSOR))
 
     @property
@@ -2000,8 +2180,6 @@ class SolarLoadController:
     @property
     def _should_wait_for_forecast(self) -> bool:
         """Return whether good forecast justifies waiting instead of forcing."""
-        if not self._forecast_enabled:
-            return False
         if self._forecast_is_insufficient_for_remaining_runtime:
             return False
 
@@ -2047,8 +2225,15 @@ def _as_float(value: Any, default: float | None = None) -> float | None:
         return default
 
 
+_FALLBACK_TIME = time(21, 0)
+
+
 def _parse_time(value: Any, default: str) -> time:
-    """Parse a Home Assistant time selector value."""
+    """Parse a Home Assistant time selector value.
+
+    Tries value first, then default, then falls back to 21:00 as an absolute
+    last resort so the function can never recurse infinitely.
+    """
     if isinstance(value, time):
         return value
     if isinstance(value, str):
@@ -2057,36 +2242,64 @@ def _parse_time(value: Any, default: str) -> time:
             return time(parts[0], parts[1], parts[2] if len(parts) > 2 else 0)
         except (TypeError, ValueError, IndexError):
             pass
-    return _parse_time(default, "21:00")
+    # Avoid infinite recursion: only retry with default if value differed.
+    if value != default:
+        return _parse_time(default, default)
+    return _FALLBACK_TIME
 
 
 def _append_debug_decision_log(path: str, record: dict[str, Any]) -> None:
-    """Append a decision debug record and prune old history."""
-    cutoff_epoch = (
-        float(record["timestamp_epoch"]) - DEBUG_DECISION_LOG_RETENTION_DAYS * 86400
-    )
-    records: list[dict[str, Any]] = []
+    """Append a decision debug record and prune old history.
 
-    try:
-        with open(path, encoding="utf-8") as file:
-            for line in file:
-                try:
-                    existing = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
+    Uses a module-level lock to prevent concurrent writes from the HA executor
+    thread pool corrupting the file.
 
-                timestamp_epoch = existing.get("timestamp_epoch")
-                if not isinstance(timestamp_epoch, int | float):
-                    records.append(existing)
-                elif timestamp_epoch >= cutoff_epoch:
-                    records.append(existing)
-    except FileNotFoundError:
-        pass
+    Fast path: if the file has fewer lines than the maximum, just append — no
+    read required. Full read-filter-rewrite only happens when pruning is needed
+    (i.e. the file is at or near the entry limit or contains stale records).
+    """
+    new_line = json.dumps(record, separators=(",", ":")) + "\n"
 
-    records.append(record)
-    records = records[-DEBUG_DECISION_LOG_MAX_ENTRIES:]
+    with _DEBUG_LOG_LOCK:
+        # Count existing lines without parsing to decide if pruning is needed.
+        line_count = 0
+        try:
+            with open(path, encoding="utf-8") as file:
+                for _ in file:
+                    line_count += 1
+        except FileNotFoundError:
+            pass
 
-    with open(path, "w", encoding="utf-8") as file:
-        for item in records:
-            file.write(json.dumps(item, separators=(",", ":")))
-            file.write("\n")
+        if line_count < DEBUG_DECISION_LOG_MAX_ENTRIES - 1:
+            # Fast path: simply append; no pruning needed yet.
+            with open(path, "a", encoding="utf-8") as file:
+                file.write(new_line)
+            return
+
+        # Pruning path: read, filter by date and max count, rewrite.
+        cutoff_epoch = (
+            float(record["timestamp_epoch"]) - DEBUG_DECISION_LOG_RETENTION_DAYS * 86400
+        )
+        records: list[dict[str, Any]] = []
+        try:
+            with open(path, encoding="utf-8") as file:
+                for line in file:
+                    try:
+                        existing = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    timestamp_epoch = existing.get("timestamp_epoch")
+                    if not isinstance(timestamp_epoch, int | float):
+                        records.append(existing)
+                    elif timestamp_epoch >= cutoff_epoch:
+                        records.append(existing)
+        except FileNotFoundError:
+            pass
+
+        records.append(record)
+        records = records[-DEBUG_DECISION_LOG_MAX_ENTRIES:]
+
+        with open(path, "w", encoding="utf-8") as file:
+            for item in records:
+                file.write(json.dumps(item, separators=(",", ":")))
+                file.write("\n")

@@ -32,15 +32,42 @@ config_entries = sys.modules.setdefault(
 )
 core = sys.modules.setdefault("homeassistant.core", types.ModuleType("homeassistant.core"))
 const = sys.modules.setdefault("homeassistant.const", types.ModuleType("homeassistant.const"))
+helpers = sys.modules.setdefault(
+    "homeassistant.helpers",
+    types.ModuleType("homeassistant.helpers"),
+)
 helpers_event = sys.modules.setdefault(
     "homeassistant.helpers.event",
     types.ModuleType("homeassistant.helpers.event"),
+)
+helpers_storage = sys.modules.setdefault(
+    "homeassistant.helpers.storage",
+    types.ModuleType("homeassistant.helpers.storage"),
 )
 util = sys.modules.setdefault("homeassistant.util", types.ModuleType("homeassistant.util"))
 dt_module = sys.modules.setdefault(
     "homeassistant.util.dt",
     types.ModuleType("homeassistant.util.dt"),
 )
+
+
+class _FakeStore:
+    """Minimal Store stub: all async operations are no-ops."""
+
+    def __init__(self, _hass, _version, _key) -> None:
+        pass
+
+    async def async_load(self):
+        return None
+
+    async def async_save(self, _data) -> None:
+        pass
+
+    async def async_remove(self) -> None:
+        pass
+
+
+helpers_storage.Store = _FakeStore
 
 
 class _FakeConfigEntry:

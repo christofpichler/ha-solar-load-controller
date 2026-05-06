@@ -137,7 +137,10 @@ def assisted_run_priority(
     exponent: float,
 ) -> float:
     """Return how strongly low assist should prefer earlier PV usage."""
-    return runtime_pressure(progress, exponent=exponent)
+    clamped_progress = min(1.0, max(0.0, progress))
+    if exponent <= 0:
+        return clamped_progress
+    return clamped_progress**exponent
 
 
 def assisted_run_effective_surplus_threshold_w(
@@ -250,12 +253,16 @@ def should_keep_assisted_run(
     forecast_next_hour_kwh: float | None,
     forecast_wait_threshold_kwh: float,
     effective_solar_surplus_w: float,
+    current_effective_solar_surplus_w: float,
     required_surplus_w: float,
     assist_priority: float,
     forecast_override_ratio_span: float,
     forecast_override_exponent: float,
     surplus_late_relief_ratio: float,
     forecast_late_relief_ratio: float,
+    hold_surplus_ratio: float,
+    hold_forecast_ratio: float,
+    collapse_floor_ratio: float,
 ) -> bool:
     """Return whether an active low-assist run should be held a bit longer."""
     if projected_grid_import_exceeds_limit:
@@ -270,14 +277,32 @@ def should_keep_assisted_run(
         assist_priority,
         late_relief_ratio=surplus_late_relief_ratio,
     )
+    collapse_floor_w = round(
+        max(0.0, effective_required_surplus_w * max(0.0, collapse_floor_ratio)),
+        1,
+    )
+    if current_effective_solar_surplus_w < collapse_floor_w:
+        return False
+
+    hold_required_surplus_w = round(
+        max(0.0, effective_required_surplus_w * max(0.0, hold_surplus_ratio)),
+        1,
+    )
+    if effective_solar_surplus_w < hold_required_surplus_w:
+        return False
+
     assisted_forecast_threshold_kwh = assisted_run_forecast_threshold_kwh(
         forecast_wait_threshold_kwh,
         effective_solar_surplus_w,
-        effective_required_surplus_w,
+        hold_required_surplus_w,
         assist_priority=assist_priority,
         ratio_span=forecast_override_ratio_span,
         exponent=forecast_override_exponent,
         late_relief_ratio=forecast_late_relief_ratio,
+    )
+    assisted_forecast_threshold_kwh = round(
+        max(0.0, assisted_forecast_threshold_kwh * max(0.0, hold_forecast_ratio)),
+        3,
     )
     if forecast_next_hour_kwh is None:
         return assisted_forecast_threshold_kwh <= 0
