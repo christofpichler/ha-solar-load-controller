@@ -131,8 +131,23 @@ dt_module.utcnow = _utcnow
 dt_module.now = _utcnow
 util.dt = dt_module
 
-from custom_components.solar_load_controller.const import DECISION_AUTOMATION_PAUSED
-from custom_components.solar_load_controller.coordinator import SolarLoadController
+from custom_components.solar_load_controller.const import (
+    CONF_BATTERY_CAPACITY_KWH,
+    CONF_BATTERY_POWER_SENSOR,
+    CONF_BATTERY_SOC_SENSOR,
+    CONF_FORECAST_NEXT_HOUR_SENSOR,
+    CONF_FORECAST_REMAINING_TODAY_SENSOR,
+    CONF_FORECAST_TODAY_SENSOR,
+    CONF_GRID_EXPORT_SENSOR,
+    CONF_GRID_IMPORT_SENSOR,
+    CONF_MIN_DAILY_RUNTIME_MINUTES,
+    DECISION_AUTOMATION_PAUSED,
+    FORECAST_DAY_MODE_HIGH,
+)
+from custom_components.solar_load_controller.coordinator import (
+    SolarLoadController,
+    today as coordinator_today,
+)
 from custom_components.solar_load_controller.decision_engine import (
     DecisionInputs,
     evaluate_decision,
@@ -213,8 +228,9 @@ def make_inputs(**overrides: object) -> DecisionInputs:
 
 
 class _FakeState:
-    def __init__(self, state: str) -> None:
+    def __init__(self, state: str, attributes: dict[str, object] | None = None) -> None:
         self.state = state
+        self.attributes = attributes or {}
 
 
 class _FakeStates:
@@ -224,8 +240,16 @@ class _FakeStates:
     def get(self, entity_id: str):
         return self._states.get(entity_id)
 
-    def set(self, entity_id: str, state: str) -> None:
-        self._states[entity_id] = _FakeState(state)
+    def set(
+        self,
+        entity_id: str,
+        state: str,
+        unit: str | None = None,
+    ) -> None:
+        attributes = {}
+        if unit is not None:
+            attributes["unit_of_measurement"] = unit
+        self._states[entity_id] = _FakeState(state, attributes)
 
 
 class _FakeServices:
@@ -307,3 +331,95 @@ class CoordinatorApplyTest(unittest.IsolatedAsyncioTestCase):
             [("switch", "turn_off", {"entity_id": "switch.pool"}, False)],
         )
         self.assertEqual(controller._test_decision.reason, DECISION_AUTOMATION_PAUSED)
+
+    def test_export_guard_uses_forecast_headroom_path_on_coordinator(self) -> None:
+        hass = _FakeHassImpl()
+        hass.states.set("switch.pool", "on")
+        hass.states.set("sensor.grid_import", "200", "W")
+        hass.states.set("sensor.grid_export", "0", "W")
+        hass.states.set("sensor.battery_soc", "80", "%")
+        hass.states.set("sensor.battery_power", "0", "W")
+        hass.states.set("sensor.forecast_remaining", "10", "kWh")
+        hass.states.set("sensor.forecast_next_hour", "0.1", "kWh")
+        hass.states.set("sensor.forecast_today", "12", "kWh")
+
+        entry = _FakeConfigEntry()
+        controller = _TestController(hass, entry)
+        controller.config.update(
+            {
+                CONF_GRID_IMPORT_SENSOR: "sensor.grid_import",
+                CONF_GRID_EXPORT_SENSOR: "sensor.grid_export",
+                CONF_BATTERY_SOC_SENSOR: "sensor.battery_soc",
+                CONF_BATTERY_POWER_SENSOR: "sensor.battery_power",
+                CONF_BATTERY_CAPACITY_KWH: 5.0,
+                CONF_FORECAST_REMAINING_TODAY_SENSOR: "sensor.forecast_remaining",
+                CONF_FORECAST_NEXT_HOUR_SENSOR: "sensor.forecast_next_hour",
+                CONF_FORECAST_TODAY_SENSOR: "sensor.forecast_today",
+                CONF_MIN_DAILY_RUNTIME_MINUTES: 0.0,
+            }
+        )
+        controller._daily_forecast_date = coordinator_today()
+        controller._daily_forecast_day_class = FORECAST_DAY_MODE_HIGH
+        controller._daily_forecast_today_kwh = 12.0
+
+        self.assertTrue(controller._export_guard_run_available)
+
+    def test_export_guard_stays_false_when_forecast_headroom_is_too_small(self) -> None:
+        hass = _FakeHassImpl()
+        hass.states.set("switch.pool", "on")
+        hass.states.set("sensor.grid_import", "200", "W")
+        hass.states.set("sensor.grid_export", "0", "W")
+        hass.states.set("sensor.battery_soc", "80", "%")
+        hass.states.set("sensor.battery_power", "0", "W")
+        hass.states.set("sensor.forecast_remaining", "0.5", "kWh")
+        hass.states.set("sensor.forecast_next_hour", "0.1", "kWh")
+        hass.states.set("sensor.forecast_today", "12", "kWh")
+
+        entry = _FakeConfigEntry()
+        controller = _TestController(hass, entry)
+        controller.config.update(
+            {
+                CONF_GRID_IMPORT_SENSOR: "sensor.grid_import",
+                CONF_GRID_EXPORT_SENSOR: "sensor.grid_export",
+                CONF_BATTERY_SOC_SENSOR: "sensor.battery_soc",
+                CONF_BATTERY_POWER_SENSOR: "sensor.battery_power",
+                CONF_BATTERY_CAPACITY_KWH: 5.0,
+                CONF_FORECAST_REMAINING_TODAY_SENSOR: "sensor.forecast_remaining",
+                CONF_FORECAST_NEXT_HOUR_SENSOR: "sensor.forecast_next_hour",
+                CONF_FORECAST_TODAY_SENSOR: "sensor.forecast_today",
+                CONF_MIN_DAILY_RUNTIME_MINUTES: 0.0,
+            }
+        )
+        controller._daily_forecast_date = coordinator_today()
+        controller._daily_forecast_day_class = FORECAST_DAY_MODE_HIGH
+        controller._daily_forecast_today_kwh = 12.0
+
+        self.assertFalse(controller._export_guard_run_available)
+
+    def test_energy_sensor_logs_unavailable_state(self) -> None:
+        hass = _FakeHassImpl()
+        hass.states.set("sensor.forecast_remaining", "unavailable", "kWh")
+        controller = _TestController(hass, _FakeConfigEntry())
+
+        with self.assertLogs(
+            "custom_components.solar_load_controller.coordinator",
+            level="DEBUG",
+        ) as captured:
+            result = controller._energy_sensor_kwh("sensor.forecast_remaining")
+
+        self.assertIsNone(result)
+        self.assertIn("Energy sensor 'sensor.forecast_remaining' is unavailable", captured.output[0])
+
+    def test_positive_sensor_logs_unknown_state(self) -> None:
+        hass = _FakeHassImpl()
+        hass.states.set("sensor.battery_soc", "unknown", "%")
+        controller = _TestController(hass, _FakeConfigEntry())
+
+        with self.assertLogs(
+            "custom_components.solar_load_controller.coordinator",
+            level="DEBUG",
+        ) as captured:
+            result = controller._positive_state_value("sensor.battery_soc")
+
+        self.assertIsNone(result)
+        self.assertIn("Numeric sensor 'sensor.battery_soc' is unknown", captured.output[0])

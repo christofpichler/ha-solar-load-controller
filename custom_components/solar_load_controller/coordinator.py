@@ -1812,6 +1812,13 @@ class SolarLoadController:
             return None
         value = self._state_as_float(entity_id)
         if value is None:
+            state = self.hass.states.get(entity_id)
+            if state is not None and str(state.state).lower() in {"unknown", "unavailable"}:
+                _LOGGER.debug(
+                    "Numeric sensor '%s' is %s; treating value as unavailable",
+                    entity_id,
+                    state.state,
+                )
             return None
         return max(0.0, value)
 
@@ -1821,6 +1828,13 @@ class SolarLoadController:
             return None
         value = self._state_as_float(entity_id)
         if value is None:
+            state = self.hass.states.get(entity_id)
+            if state is not None and str(state.state).lower() in {"unknown", "unavailable"}:
+                _LOGGER.debug(
+                    "Energy sensor '%s' is %s; treating value as unavailable",
+                    entity_id,
+                    state.state,
+                )
             return None
 
         unit = (self._state_unit(entity_id) or "").lower()
