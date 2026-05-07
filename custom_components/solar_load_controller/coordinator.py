@@ -31,6 +31,7 @@ from .const import (
     CONF_BATTERY_SOC_SENSOR,
     CONF_DEBUG_SENSOR_ENABLED,
     CONF_FORECAST_HIGH_THRESHOLD_KWH_PER_KWP,
+    CONF_FORECAST_LOW_THRESHOLD_KWH_PER_KWP,
     CONF_FORECAST_NEXT_HOUR_SENSOR,
     CONF_FORECAST_REMAINING_TODAY_SENSOR,
     CONF_FORECAST_TODAY_SENSOR,
@@ -63,6 +64,7 @@ from .const import (
     DEFAULT_BATTERY_POWER_DIRECTION,
     DEFAULT_EARLIEST_START_TIME,
     DEFAULT_FORECAST_HIGH_THRESHOLD_KWH_PER_KWP,
+    DEFAULT_FORECAST_LOW_THRESHOLD_KWH_PER_KWP,
     DEFAULT_FORECAST_WAIT_MINUTES,
     DEFAULT_GRID_IMPORT_LIMIT_W,
     DEFAULT_HIGH_MODE_BASE_HOUSEHOLD_LOAD_W,
@@ -75,6 +77,7 @@ from .const import (
     FORECAST_DAY_MODE_AUTO,
     FORECAST_DAY_MODE_HIGH,
     FORECAST_DAY_MODE_LOW,
+    FORECAST_DAY_MODE_MID,
 )
 from .decision_engine import DecisionInputs, DecisionResult, evaluate_decision
 from .decision_log import (
@@ -132,6 +135,12 @@ from .low_mode import (
     LOW_FORECAST_ASSISTED_HOLD_FORECAST_RATIO,
     LOW_FORECAST_ASSISTED_HOLD_COLLAPSE_RATIO,
     LOW_FORECAST_ASSISTED_HOLD_SUPPORT_TIME_CONSTANT_SECONDS,
+)
+from .mid_mode import (
+    MID_FORECAST_ASSISTED_SURPLUS_RATIO,
+    MID_FORECAST_WAIT_NEXT_HOUR_RATIO,
+    should_allow_mid_mode_assisted_run,
+    should_wait_for_mid_forecast,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -300,6 +309,7 @@ class SolarLoadController:
         if mode not in {
             FORECAST_DAY_MODE_AUTO,
             FORECAST_DAY_MODE_LOW,
+            FORECAST_DAY_MODE_MID,
             FORECAST_DAY_MODE_HIGH,
         }:
             return
@@ -511,6 +521,29 @@ class SolarLoadController:
         )
 
     @property
+    def runtime_progress(self) -> float:
+        """Return day progress inside the active time window (mode-neutral)."""
+        total_window_minutes = self._total_window_minutes
+        if total_window_minutes <= 0:
+            return 0.0
+        elapsed_window_minutes = max(
+            0.0,
+            min(total_window_minutes, total_window_minutes - self.minutes_until_finish),
+        )
+        return round(elapsed_window_minutes / total_window_minutes, 3)
+
+    @property
+    def runtime_slack_minutes(self) -> float:
+        """Return remaining free slack between finish time and runtime target (mode-neutral)."""
+        return round(
+            max(
+                0.0,
+                self.minutes_until_finish - self.runtime_remaining_today_minutes,
+            ),
+            1,
+        )
+
+    @property
     def low_mode_runtime_progress(self) -> float:
         """Return low-mode day progress inside the active time window."""
         total_window_minutes = self._total_window_minutes
@@ -638,6 +671,24 @@ class SolarLoadController:
             ratio_span=LOW_FORECAST_ASSISTED_FORECAST_OVERRIDE_RATIO_SPAN,
             exponent=LOW_FORECAST_ASSISTED_FORECAST_OVERRIDE_EXPONENT,
             late_relief_ratio=LOW_FORECAST_ASSISTED_FORECAST_LATE_RELIEF_RATIO,
+        )
+
+    @property
+    def mid_mode_assisted_surplus_threshold_w(self) -> float:
+        """Return the solar surplus needed for a mid-mode assisted start."""
+        return round(self.load_power_w * MID_FORECAST_ASSISTED_SURPLUS_RATIO, 1)
+
+    @property
+    def mid_mode_solar_surplus_w(self) -> float:
+        """Return grid-free solar surplus used for mid-mode decisions (no battery)."""
+        return self.available_surplus_w
+
+    @property
+    def mid_mode_forecast_wait_threshold_kwh(self) -> float:
+        """Return the next-hour forecast kWh needed to justify waiting in mid mode."""
+        return round(
+            self.load_power_w * MID_FORECAST_WAIT_NEXT_HOUR_RATIO / 1000,
+            4,
         )
 
     def _decayed_low_assist_hold_support_w(
@@ -1021,7 +1072,7 @@ class SolarLoadController:
         return round(forecast_today_kwh / pv_size_kwp, 2)
 
     def _classify_forecast_kwh_per_kwp(self, kwh_per_kwp: float | None) -> str:
-        """Classify the daily forecast into low or high."""
+        """Classify the daily forecast into low, mid, or high."""
         if kwh_per_kwp is None:
             return "unknown"
 
@@ -1031,6 +1082,13 @@ class SolarLoadController:
         )
         if kwh_per_kwp >= high_threshold:
             return FORECAST_DAY_MODE_HIGH
+
+        low_threshold = _as_float(
+            self.config.get(CONF_FORECAST_LOW_THRESHOLD_KWH_PER_KWP),
+            DEFAULT_FORECAST_LOW_THRESHOLD_KWH_PER_KWP,
+        )
+        if kwh_per_kwp >= low_threshold:
+            return FORECAST_DAY_MODE_MID
         return FORECAST_DAY_MODE_LOW
 
     @property
@@ -1165,6 +1223,13 @@ class SolarLoadController:
                 self._battery_can_support_forced_runtime(runtime_remaining)
             ),
             should_wait_for_forecast=self._should_wait_for_forecast,
+            mid_mode_assisted_surplus_threshold_w=(
+                self.mid_mode_assisted_surplus_threshold_w
+            ),
+            mid_mode_solar_surplus_w=self.mid_mode_solar_surplus_w,
+            mid_mode_forecast_wait_threshold_kwh=(
+                self.mid_mode_forecast_wait_threshold_kwh
+            ),
             battery_mode=self.battery_mode,
             battery_soc=self.battery_soc,
             battery_power_w=self.battery_power_w,
@@ -1926,9 +1991,35 @@ class SolarLoadController:
         )
 
     @property
+    def _mid_forecast_assisted_run_available(self) -> bool:
+        """Return whether mid mode may start the load with partial solar coverage."""
+        runtime_remaining_minutes = self.runtime_remaining_today_minutes
+        if runtime_remaining_minutes <= 0:
+            return False
+        # If the force-runtime window is already active, let the engine use
+        # must_force_minimum_runtime (runtime_force) instead of forecast_run.
+        # This prevents mid-mode from suppressing the latch that keeps the
+        # load running even when solar later collapses.
+        if self._must_force_minimum_runtime(runtime_remaining_minutes):
+            return False
+        if self.available_surplus_w >= self.load_power_w:
+            return False
+        return should_allow_mid_mode_assisted_run(
+            effective_solar_surplus_w=self.mid_mode_solar_surplus_w,
+            load_power_w=self.load_power_w,
+            battery_power_state=self.battery_power_state,
+            projected_grid_import_exceeds_limit=self._projected_grid_import_exceeds_limit,
+        )
+
+    @property
     def _forecast_assisted_run_available(self) -> bool:
-        """Return whether future mid-day forecast assistance may run the load."""
-        if self.forecast_day_class != FORECAST_DAY_MODE_LOW:
+        """Return whether mid-day forecast assistance may run the load."""
+        day_class = self.forecast_day_class
+
+        if day_class == FORECAST_DAY_MODE_MID:
+            return self._mid_forecast_assisted_run_available
+
+        if day_class != FORECAST_DAY_MODE_LOW:
             return False
 
         runtime_remaining_minutes = self.runtime_remaining_today_minutes
@@ -2132,7 +2223,9 @@ class SolarLoadController:
         if self._forecast_is_insufficient_for_remaining_runtime:
             return False
 
-        if self.forecast_day_class == FORECAST_DAY_MODE_LOW:
+        day_class = self.forecast_day_class
+
+        if day_class == FORECAST_DAY_MODE_LOW:
             return should_wait_for_low_mode_forecast(
                 forecast_remaining_kwh=self._forecast_remaining_kwh,
                 forecast_next_hour_kwh=self._forecast_next_hour_kwh,
@@ -2145,6 +2238,16 @@ class SolarLoadController:
                 max_multiplier=LOW_FORECAST_WAIT_THRESHOLD_MAX_MULTIPLIER,
             )
 
+        if day_class == FORECAST_DAY_MODE_MID:
+            return should_wait_for_mid_forecast(
+                forecast_remaining_kwh=self._forecast_remaining_kwh,
+                forecast_next_hour_kwh=self._forecast_next_hour_kwh,
+                slack_minutes=self.runtime_slack_minutes,
+                load_power_w=self.load_power_w,
+                wait_minutes=DEFAULT_FORECAST_WAIT_MINUTES,
+            )
+
+        # High mode: wait if next-hour forecast is strong enough.
         next_hour_kwh = self._forecast_next_hour_kwh
         if next_hour_kwh is None:
             return self._forecast_remaining_kwh is not None

@@ -27,6 +27,7 @@ from custom_components.solar_load_controller.const import (
     DECISION_BATTERY_PROTECTED,
     DECISION_BATTERY_PRIORITY,
     DECISION_EXPORT_GUARD,
+    DECISION_FORECAST_ASSISTED_RUN,
     DECISION_FORECAST_WAIT,
     DECISION_GRID_IMPORT_LIMIT_EXCEEDED,
     DECISION_LOW_FORECAST_ASSISTED_RUN,
@@ -104,6 +105,9 @@ def make_inputs(**overrides: object) -> DecisionInputs:
         projected_grid_import_exceeds_limit=False,
         battery_can_support_forced_runtime=True,
         should_wait_for_forecast=False,
+        mid_mode_assisted_surplus_threshold_w=247.5,
+        mid_mode_solar_surplus_w=0.0,
+        mid_mode_forecast_wait_threshold_kwh=0.3375,
         battery_mode="preserve",
         battery_soc=5.0,
         battery_power_w=0.0,
@@ -384,6 +388,54 @@ class DecisionEngineTest(unittest.TestCase):
             result.summary,
             "grid_import: projected import above start limit",
         )
+
+    # --- Mid-mode / force-path priority regression (Codex Fix 1) ---
+
+    def test_must_force_runtime_wins_when_forecast_assisted_not_set(self) -> None:
+        """On a deadline mid-day the engine must produce runtime_force, not forecast_run.
+
+        The coordinator is responsible for setting forecast_assisted_run_available=False
+        when _must_force_minimum_runtime is True.  This test verifies the engine
+        picks runtime_force when the coordinator has done its job correctly.
+        """
+        result = evaluate_decision(
+            make_inputs(
+                forecast_day_class="mid",
+                forecast_assisted_run_available=False,   # coordinator cleared this
+                must_force_minimum_runtime=True,
+                battery_can_support_forced_runtime=True,
+                projected_grid_import_exceeds_limit=False,
+            )
+        )
+
+        self.assertTrue(result.should_run)
+        self.assertEqual(result.reason, DECISION_MINIMUM_RUNTIME_REQUIRED)
+
+    def test_forecast_assisted_run_suppresses_force_runtime_in_engine(self) -> None:
+        """Engine priority: forecast_assisted_run_available beats must_force_minimum_runtime.
+
+        This documents WHY the coordinator must never set forecast_assisted_run_available=True
+        when must_force_minimum_runtime is True: the engine would pick forecast_run
+        instead of runtime_force, and the force-latch would not activate.
+
+        The coordinator fix (checking _must_force_minimum_runtime inside
+        _mid_forecast_assisted_run_available) prevents this combination from
+        ever reaching the engine.
+        """
+        result = evaluate_decision(
+            make_inputs(
+                forecast_day_class="mid",
+                forecast_assisted_run_available=True,    # coordinator must NOT do this
+                must_force_minimum_runtime=True,
+                battery_can_support_forced_runtime=True,
+            )
+        )
+
+        # Engine picks forecast_run — load runs but the force-latch does NOT activate.
+        # This is the wrong outcome on a deadline day, which is why the coordinator
+        # must guard against this combination.
+        self.assertTrue(result.should_run)
+        self.assertEqual(result.reason, DECISION_FORECAST_ASSISTED_RUN)
 
 
 if __name__ == "__main__":

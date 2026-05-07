@@ -95,6 +95,9 @@ class DecisionInputs:
     projected_grid_import_exceeds_limit: bool
     battery_can_support_forced_runtime: bool
     should_wait_for_forecast: bool
+    mid_mode_assisted_surplus_threshold_w: float
+    mid_mode_solar_surplus_w: float
+    mid_mode_forecast_wait_threshold_kwh: float
     battery_mode: str
     battery_soc: float | None
     battery_power_w: float | None
