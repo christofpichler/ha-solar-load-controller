@@ -1,6 +1,9 @@
 {
   "title": "Solar Load Controller",
   "config": {
+    "error": {
+      "low_threshold_too_high": "Die Mid-Schwelle muss kleiner sein als die High-Schwelle."
+    },
     "step": {
       "user": {
         "title": "1/6 Verbraucher",
@@ -97,6 +100,9 @@
     }
   },
   "options": {
+    "error": {
+      "low_threshold_too_high": "Die Mid-Schwelle muss kleiner sein als die High-Schwelle."
+    },
     "step": {
       "init": {
         "title": "Optionen: 1/6 Verbraucher",
@@ -191,9 +197,6 @@
         }
       }
     }
-  },
-  "error": {
-    "low_threshold_too_high": "Die Mid-Schwelle muss kleiner sein als die High-Schwelle."
   },
   "selector": {
     "battery_mode": {

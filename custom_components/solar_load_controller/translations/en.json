@@ -1,6 +1,9 @@
 {
   "title": "Solar Load Controller",
   "config": {
+    "error": {
+      "low_threshold_too_high": "Mid mode threshold must be lower than the High mode threshold."
+    },
     "step": {
       "user": {
         "title": "1/6 Load",
@@ -97,6 +100,9 @@
     }
   },
   "options": {
+    "error": {
+      "low_threshold_too_high": "Mid mode threshold must be lower than the High mode threshold."
+    },
     "step": {
       "init": {
         "title": "Options: 1/6 Load",
@@ -191,9 +197,6 @@
         }
       }
     }
-  },
-  "error": {
-    "low_threshold_too_high": "Mid mode threshold must be lower than the High mode threshold."
   },
   "selector": {
     "battery_mode": {
