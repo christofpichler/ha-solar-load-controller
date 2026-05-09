@@ -137,6 +137,7 @@ from .low_mode import (
     LOW_FORECAST_ASSISTED_HOLD_SUPPORT_TIME_CONSTANT_SECONDS,
 )
 from .mid_mode import (
+    MID_FORECAST_ASSISTED_HOLD_MINUTES,
     MID_FORECAST_ASSISTED_SURPLUS_RATIO,
     MID_FORECAST_WAIT_NEXT_HOUR_RATIO,
     should_allow_mid_mode_assisted_run,
@@ -2004,6 +2005,17 @@ class SolarLoadController:
             return False
         if self.available_surplus_w >= self.load_power_w:
             return False
+        # Hold window: keep the assisted run alive for a short fixed period
+        # after the load started via forecast_run, even when the solar signal
+        # temporarily collapses.  Grid-import protection still wins immediately.
+        if (
+            self.is_load_on
+            and self._tracker.active_runtime_reason == DECISION_FORECAST_ASSISTED_RUN
+            and self._last_turned_on_at is not None
+            and self._minutes_since(self._last_turned_on_at)
+            < MID_FORECAST_ASSISTED_HOLD_MINUTES
+        ):
+            return not self._projected_grid_import_exceeds_limit
         return should_allow_mid_mode_assisted_run(
             effective_solar_surplus_w=self.mid_mode_solar_surplus_w,
             load_power_w=self.load_power_w,
@@ -2127,6 +2139,20 @@ class SolarLoadController:
         # even without real-time surplus at this moment.
         # available_surplus_w >= load_power_w is already handled above (returns True early),
         # so that condition must not be repeated here.
+        #
+        # Guard: do not trigger via forecast-headroom when the battery is actively
+        # discharging to cover household load *and* PV alone is below the load
+        # power.  In that state the low grid-import reading is an artefact of
+        # Solarbank self-discharge management, not a solar surplus signal.
+        # Starting the load forces the battery to also power the pump; when the
+        # Solarbank resets to charging mode the grid-import limit fires within
+        # minutes and kills the run — burning energy and battery cycles for nothing.
+        pv_w = self.pv_current_power_w
+        if self.battery_power_state == "discharging" and (
+            pv_w is None or pv_w < self.load_power_w
+        ):
+            return False
+
         return (
             forecast_remaining_kwh
             >= battery_charge_required_kwh * HIGH_FORECAST_CURTAILMENT_HEADROOM_RATIO
@@ -2134,6 +2160,13 @@ class SolarLoadController:
 
     def _should_prioritize_battery_after_runtime(self) -> bool:
         """Return whether the battery should win over optional high-mode runtime."""
+        # Battery priority after runtime is a high-mode concept only.
+        # On low and mid days the minimum runtime is the only target; once it
+        # is met the load simply stops (runtime_met).  Applying high-mode
+        # battery reservation logic on those days would incorrectly block solar
+        # surplus runs and emit a confusing battery_priority reason.
+        if self.forecast_day_class != FORECAST_DAY_MODE_HIGH:
+            return False
         if self.runtime_remaining_today_minutes > 0:
             return False
 

@@ -23,6 +23,7 @@ solar_load_controller.__path__ = [str(PACKAGE_DIR)]
 setattr(custom_components, "solar_load_controller", solar_load_controller)
 
 from custom_components.solar_load_controller.mid_mode import (
+    MID_FORECAST_ASSISTED_HOLD_MINUTES,
     MID_FORECAST_ASSISTED_SURPLUS_RATIO,
     MID_FORECAST_WAIT_NEXT_HOUR_RATIO,
     should_allow_mid_mode_assisted_run,
@@ -228,6 +229,18 @@ class TestShouldWaitForMidForecast(unittest.TestCase):
                 wait_minutes=60.0,
             )
         )
+
+
+class TestMidModeConstants(unittest.TestCase):
+    """Sanity checks for mid-mode tuning constants."""
+
+    def test_hold_minutes_is_positive(self) -> None:
+        """Hold window must be a positive number of minutes."""
+        self.assertGreater(MID_FORECAST_ASSISTED_HOLD_MINUTES, 0)
+
+    def test_hold_minutes_is_less_than_one_hour(self) -> None:
+        """Hold window should not be absurdly long."""
+        self.assertLess(MID_FORECAST_ASSISTED_HOLD_MINUTES, 60)
 
 
 if __name__ == "__main__":

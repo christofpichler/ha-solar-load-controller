@@ -4,7 +4,10 @@ Mid mode is a calm, independent mode for days with moderate solar yield
 (between the low and high thresholds). It does NOT share logic with low mode:
 
 * No runtime-pressure curve — decisions do not become more aggressive over time.
-* No hold hysteresis — no decayed support signal between ticks.
+* Simple hold window — after a forecast_run start, mid mode keeps running for a
+  short fixed period (MID_FORECAST_ASSISTED_HOLD_MINUTES) even if the solar
+  signal temporarily collapses.  Grid-import protection still applies.
+  There is no decayed support signal or hysteresis beyond this plain timer.
 * No force cascade — minimum runtime forcing remains a low-mode responsibility.
 * No battery mixing — only grid-free solar surplus (available_surplus_w) is used.
 * No next-hour fallback — if forecast_next_hour_kwh is unavailable, mid mode
@@ -28,6 +31,13 @@ MID_FORECAST_ASSISTED_SURPLUS_RATIO: float = 0.55
 # waiting rather than starting. At 0.75 a 450 W load requires ≥ 0.3375 kWh
 # forecast for the coming hour before mid mode decides to wait.
 MID_FORECAST_WAIT_NEXT_HOUR_RATIO: float = 0.75
+
+# Minutes to hold a forecast_run after the load has started, even if the solar
+# signal temporarily drops below the assisted-run threshold.  Grid-import
+# protection still cancels the hold immediately.  This prevents rapid cycling
+# on installations with noisy solar measurements (e.g. microinverters that
+# report 0 W briefly between measurement cycles).
+MID_FORECAST_ASSISTED_HOLD_MINUTES: float = 5.0
 
 
 def should_allow_mid_mode_assisted_run(

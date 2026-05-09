@@ -128,41 +128,38 @@ Assistant sensor entities with stable numeric states and units.
 
 ## Forecast Modes
 
-The integration currently uses two day classes:
+The integration currently uses three day classes:
 
 - `low`: weak forecast. The controller focuses on reaching the configured
   minimum runtime.
+- `mid`: moderate forecast. The controller uses calm solar windows without
+  low-mode pressure behavior.
 - `high`: strong forecast. The controller tries to use available PV surplus and
   avoid wasting energy when the battery is full or forecast energy is likely to
   exceed remaining battery headroom.
 
 The automatic day class is captured from the forecast after 06:00. A manual
-override select is available for testing with `auto`, `low`, and `high`.
+override select is available for testing with `auto`, `low`, `mid`, and `high`.
 
 ## Mode Logic
 
+![Mode decision matrix](assets/mode-decision-matrix-en.png)
+
 ### High Mode
 
-![High Mode concept](assets/high-mode-concept-en.png)
-
-High mode is intended for strong forecast days. It can use real PV surplus
-earlier, but after the minimum runtime is already reached it becomes
-progressively stricter about reserving the remaining forecast for:
-
-- battery charging up to the internal target of `99%`
-- expected household base load plus reserve
-- an additional late-day battery-priority buffer
-
-That late-day battery-priority buffer is scaled from the configured household
-base load and rises with a light exponential curve over the allowed day window.
+High mode is intended for strong forecast days. It prefers direct solar and
+export-aware runtime decisions, then becomes stricter after minimum runtime is
+already met so that remaining forecast can still cover battery charging,
+household reserve, and the late-day battery-priority buffer.
 
 ### Mid Mode
 
-Coming soon.
+Mid mode is the calm middle band between low and high. It can wait for a
+clearly better next-hour window, allow a simple assisted start via
+`forecast_run`, and otherwise falls through to the shared completion logic
+without low-mode pressure or hold hysteresis.
 
 ### Low Mode
-
-![Low Mode concept](assets/low-mode-concept-en.png)
 
 Low mode is intended for weaker forecast days. It stays defensive early,
 prefers waiting while forecast and remaining runtime slack still justify it,

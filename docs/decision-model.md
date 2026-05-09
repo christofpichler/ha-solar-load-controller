@@ -18,17 +18,16 @@ At a high level, the runtime flow combines:
 - current and remaining PV forecast
 - minimum daily runtime progress
 - the configured day window
-- mode-specific logic for `low` and `high`
+- mode-specific logic for `low`, `mid`, and `high`
 
 The day class is captured once per day after `06:00` and then held stable for
 that day unless the user applies a manual mode override.
 
 Current day classes:
 
-- `low`
-- `high`
-
-`mid` is planned, but not implemented yet.
+- `low` — below the configured low threshold (default < 2.0 kWh/kWp)
+- `mid` — between the low and high thresholds (default 2.0–5.0 kWh/kWp)
+- `high` — at or above the configured high threshold (default ≥ 5.0 kWh/kWp)
 
 ## Core Calculations
 
@@ -92,7 +91,8 @@ After `06:00`, the integration captures the day class from:
 
 - `forecast_today_kwh`
 - `pv_size_kwp`
-- configured high-mode threshold in `kWh/kWp`
+- configured low-mode threshold in `kWh/kWp`  (`forecast_low_threshold_kwh_per_kwp`)
+- configured high-mode threshold in `kWh/kWp` (`forecast_high_threshold_kwh_per_kwp`)
 
 That means:
 
@@ -129,6 +129,8 @@ The current short decision reasons are:
 High mode is designed for strong forecast days. It is more willing to use
 available solar support early, but becomes stricter later in the day after the
 minimum runtime is already satisfied.
+
+![High Mode Concept](../assets/high-mode-concept-en.png)
 
 ### Main behavior
 
@@ -204,6 +206,8 @@ These are user-configurable and directly feed the high-mode model:
 Low mode is designed for weaker forecast days. Its job is not to maximize
 surplus usage, but to reach the minimum daily runtime with as little unnecessary
 grid and battery stress as possible.
+
+![Low Mode Concept](../assets/low-mode-concept-en.png)
 
 ### Main behavior
 
@@ -336,18 +340,131 @@ These user-configurable values most strongly affect low-mode behavior:
 
 ## Mid Mode
 
-`mid` is not implemented yet.
+Mid mode covers moderate forecast days — days that are neither tight enough for
+low-mode deadline management nor abundant enough for high-mode aggressive surplus
+usage. It activates when the day's `forecast_today_kwh / pv_size_kwp` falls
+between the two configured thresholds (default: 2.0 – 5.0 kWh/kWp).
 
-The likely role of `mid` is to sit between:
+![Mid Mode Concept](../assets/mid-mode-concept-en.png)
 
-- low-mode deadline protection
-- and high-mode aggressive surplus usage
+### Design principles
 
-Once `mid` exists, this document should be extended with:
+Mid mode is intentionally calm and flat:
 
-- its own helper functions
-- its own tuning constants
-- its own boundary against `low` and `high`
+- no runtime pressure curve — it does not ramp behavior based on time-of-day
+- simple hold window — after a `forecast_run` start, mid mode keeps the load
+  running for a short fixed period (`MID_FORECAST_ASSISTED_HOLD_MINUTES`)
+  even if the solar signal temporarily collapses; grid-import protection still
+  cancels immediately; this prevents rapid cycling on installations with noisy
+  solar measurements (e.g. microinverters that report 0 W briefly)
+- no force cascade — it never escalates to `runtime_force` on its own
+- no battery mixing — it only uses effective solar surplus, never active battery
+  discharge
+
+`runtime_force` is still available via the shared coordinator path, but mid mode
+itself does not activate it. If minimum runtime is not met by end of day and low
+mode cannot force it, the coordinator escalates — but mid mode does not push
+toward that.
+
+### Main behavior
+
+Mid mode has two main phases:
+
+1. **Wait when short-term solar is too weak**
+   - if `forecast_next_hour_kwh` shows enough upcoming energy and the time
+     slack is sufficient, it emits `forecast` (`DECISION_FORECAST_WAIT`)
+   - if `forecast_next_hour_kwh` is unavailable, mid mode does **not** wait —
+     it falls through and acts on current solar immediately (contrast with low
+     mode which waits defensively when next-hour data is missing)
+
+2. **Allow a controlled assisted start when current solar is strong enough**
+   - if effective solar surplus meets a fixed threshold (55% of load power by
+     default) and the projected grid situation is clean, it emits `forecast_run`
+     (`DECISION_FORECAST_ASSISTED_RUN`)
+   - the threshold is not time-scaled — it is the same at 09:00 as at 15:00
+
+When neither condition applies and there is no real solar surplus, the decision
+falls through toward `waiting` or `runtime_force` (if the coordinator's shared
+force path activates it).
+
+### Key helpers
+
+In [mid_mode.py](/Users/A200029998/Documents/pool-automation/custom_components/solar_load_controller/mid_mode.py):
+
+- `should_allow_mid_mode_assisted_run(...)`
+  - returns `True` when effective solar surplus meets the fixed ratio threshold,
+    the projected grid import is below the limit, and the battery is not actively
+    discharging
+  - blocking conditions: `projected_grid_import_exceeds_limit`, battery
+    `discharging`, or `load_power_w <= 0`
+
+- `should_wait_for_mid_forecast(...)`
+  - returns `True` when there is still meaningful slack, the next-hour forecast
+    is high enough to justify waiting, and forecast data is available
+  - returns `False` immediately if `forecast_next_hour_kwh is None` — this is
+    the key behavioral difference from low mode
+
+The coordinator guard in `_mid_forecast_assisted_run_available` also enforces
+that mid mode never sets `forecast_assisted_run_available = True` when
+`_must_force_minimum_runtime` is already active. This prevents mid mode from
+suppressing the force-latch that the shared runtime path uses to guarantee the
+minimum runtime target is reached.
+
+### Mid-mode tuning constants
+
+These are defined in
+[mid_mode.py](/Users/A200029998/Documents/pool-automation/custom_components/solar_load_controller/mid_mode.py).
+
+- `MID_FORECAST_ASSISTED_SURPLUS_RATIO = 0.55`
+  - the effective solar surplus must be at least 55% of load power for an
+    assisted start; this is a flat ratio with no time-of-day scaling
+
+- `MID_FORECAST_WAIT_NEXT_HOUR_RATIO = 0.75`
+  - the next-hour forecast threshold is computed as 75% of load power converted
+    to kWh; mid mode waits when the upcoming hour is expected to provide at
+    least this much energy
+
+- `MID_FORECAST_ASSISTED_HOLD_MINUTES = 5.0`
+  - after the load starts via `forecast_run`, mid mode holds the assisted run
+    alive for up to 5 minutes even if the solar signal temporarily drops below
+    the surplus threshold; grid-import protection (`projected_grid_import_exceeds_limit`)
+    still cancels immediately; prevents rapid cycling from noisy microinverter
+    measurements
+
+### Mid-mode config inputs
+
+These user-configurable values control when mid mode is active and how it
+interacts with the shared runtime path:
+
+- `forecast_low_threshold_kwh_per_kwp`
+  - below this threshold the day is classified as `low`; above it the day is
+    `mid` (until the high threshold is reached)
+  - default: 2.0 kWh/kWp
+  - must be strictly less than `forecast_high_threshold_kwh_per_kwp`; the
+    config flow enforces this at save time
+
+- `forecast_high_threshold_kwh_per_kwp`
+  - at or above this threshold the day becomes `high`
+  - the band between the two thresholds is the mid-mode range
+
+- `min_daily_runtime_minutes`
+  - mid mode shares the same minimum runtime target as low mode; the shared
+    coordinator path handles force escalation if the deadline approaches
+
+- `min_runtime_battery_override` and `min_runtime_grid_override`
+  - these apply identically to mid and low mode when the shared force path
+    activates
+
+### Behavioral difference from low mode
+
+The clearest difference between mid and low mode is how each handles a missing
+`forecast_next_hour_kwh` sensor:
+
+- **Low mode** waits when next-hour data is missing — the day is tight, so
+  waiting is the safer default
+- **Mid mode** does not wait when next-hour data is missing — the day has enough
+  forecast headroom that waiting on absent data serves no purpose; it acts on
+  whatever current solar is available instead
 
 ## Debugging and Analysis
 
