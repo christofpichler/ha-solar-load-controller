@@ -240,6 +240,8 @@ class _FakeState:
     def __init__(self, state: str, attributes: dict[str, object] | None = None) -> None:
         self.state = state
         self.attributes = attributes or {}
+        self.last_changed = datetime.now(timezone.utc)
+        self.last_updated = self.last_changed
 
 
 class _FakeStates:
@@ -454,6 +456,21 @@ class CoordinatorApplyTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNone(result)
         self.assertIn("Numeric sensor 'sensor.battery_soc' is unknown", captured.output[0])
+
+    def test_decision_log_record_includes_debug_input_states(self) -> None:
+        hass = _FakeHassImpl()
+        hass.states.set("switch.pool", "off")
+        hass.states.set("sensor.grid_import", "100", "W")
+        controller = _TestController(hass, _FakeConfigEntry())
+        controller.config[CONF_GRID_IMPORT_SENSOR] = "sensor.grid_import"
+
+        record = controller._decision_log_record(controller.decision)
+
+        self.assertEqual(
+            record["states"]["grid_import_sensor"]["entity_id"],
+            "sensor.grid_import",
+        )
+        self.assertEqual(record["states"]["grid_import_sensor"]["state"], "100")
 
 
 class MidModeHoldTest(unittest.TestCase):
