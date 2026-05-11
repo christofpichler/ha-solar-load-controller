@@ -64,6 +64,38 @@ def should_allow_mid_mode_assisted_run(
     return effective_solar_surplus_w >= threshold_w
 
 
+def forecast_assisted_run_available(
+    *,
+    is_currently_assisting: bool,
+    minutes_since_turn_on: float | None,
+    projected_grid_import_exceeds_limit: bool,
+    available_surplus_w: float,
+    effective_solar_surplus_w: float,
+    load_power_w: float,
+    battery_power_state: str,
+    assisted_hold_minutes: float = MID_FORECAST_ASSISTED_HOLD_MINUTES,
+) -> bool:
+    """Return whether mid mode may run the load via forecast assistance.
+
+    Callers must pre-check that the current day class is mid and that runtime
+    is still outstanding and not already being forced.
+    """
+    if available_surplus_w >= load_power_w:
+        return False
+    if (
+        is_currently_assisting
+        and minutes_since_turn_on is not None
+        and minutes_since_turn_on < assisted_hold_minutes
+    ):
+        return not projected_grid_import_exceeds_limit
+    return should_allow_mid_mode_assisted_run(
+        effective_solar_surplus_w=effective_solar_surplus_w,
+        load_power_w=load_power_w,
+        battery_power_state=battery_power_state,
+        projected_grid_import_exceeds_limit=projected_grid_import_exceeds_limit,
+    )
+
+
 def should_wait_for_mid_forecast(
     *,
     forecast_remaining_kwh: float | None,

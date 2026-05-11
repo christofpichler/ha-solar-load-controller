@@ -95,6 +95,8 @@ from .energy import (
 )
 from .high_mode import (
     allow_post_runtime_export_guard_restart,
+    export_guard_run_available,
+    should_prioritize_battery_after_runtime,
     HIGH_FORECAST_CURTAILMENT_HEADROOM_RATIO,
     HIGH_FORECAST_NO_GRID_TOLERANCE_W,
     HIGH_FORECAST_POST_RUNTIME_BATTERY_TARGET_SOC,
@@ -111,8 +113,7 @@ from .low_mode import (
     assisted_run_priority as low_mode_assisted_run_priority,
     assisted_run_strength_ratio as low_mode_assisted_run_strength_ratio,
     assisted_run_surplus_threshold_w as low_mode_assisted_surplus_threshold_w,
-    should_allow_assisted_run as should_allow_low_mode_assisted_run,
-    should_keep_assisted_run as should_keep_low_mode_assisted_run,
+    forecast_assisted_run_available as low_mode_forecast_assisted_run_available,
     forecast_wait_threshold_kwh as low_mode_forecast_wait_threshold_kwh,
     runtime_pressure as low_mode_runtime_pressure,
     runtime_wait_buffer_minutes as low_mode_runtime_wait_buffer_minutes,
@@ -140,7 +141,7 @@ from .mid_mode import (
     MID_FORECAST_ASSISTED_HOLD_MINUTES,
     MID_FORECAST_ASSISTED_SURPLUS_RATIO,
     MID_FORECAST_WAIT_NEXT_HOUR_RATIO,
-    should_allow_mid_mode_assisted_run,
+    forecast_assisted_run_available as mid_mode_forecast_assisted_run_available,
     should_wait_for_mid_forecast,
 )
 
@@ -179,6 +180,7 @@ class SolarLoadController:
         self.config = {**entry.data, **entry.options}
         self.load_entity_id = self.config[CONF_LOAD_SWITCH]
         self.automation_paused = False
+        self._paused_needs_turn_off = False
         self._applying_decision = False
         self._pending_automatic_turn_on = False
         self._pending_load_state: bool | None = None
@@ -295,11 +297,18 @@ class SolarLoadController:
         """Set whether automatic control is paused."""
         self.automation_paused = paused
         if paused:
+            # Remember whether the pump is currently on so that the first
+            # _async_apply_decision call can turn it off.  Any subsequent
+            # is_load_on=True while paused is a manual turn-on and must not
+            # be overridden by the coordinator.
+            self._paused_needs_turn_off = self.is_load_on
             if self._runtime_force_latched:
                 self._runtime_force_latched = False
                 self.hass.async_create_task(self._async_save_persist_state())
             self._async_cancel_runtime_completion_check()
-        elif self.is_load_on:
+        else:
+            self._paused_needs_turn_off = False
+        if not paused and self.is_load_on:
             self._async_schedule_runtime_completion_check()
         self._async_notify_listeners()
         self.hass.async_create_task(self._async_apply_decision())
@@ -1428,8 +1437,20 @@ class SolarLoadController:
             if self._runtime_force_latched != _latch_before:
                 self.hass.async_create_task(self._async_save_persist_state())
             self._async_log_decision_if_changed(decision)
-            if decision.reason == DECISION_AUTOMATION_PAUSED and not self.is_load_on:
-                return
+            if decision.reason == DECISION_AUTOMATION_PAUSED:
+                if not self.is_load_on:
+                    return  # pump already off, nothing to do
+                if not self._paused_needs_turn_off and not self._pending_load_state_matches(
+                    False
+                ):
+                    # Pump is on but we have no pending turn-off and the
+                    # coordinator did not initiate this: the user manually
+                    # turned on the load while paused.  Respect manual control.
+                    return
+                # Clear the flag so subsequent calls leave the pump alone
+                # once the turn-off has been issued.
+                self._paused_needs_turn_off = False
+                # Fall through to issue the turn_off service call.
             if decision.should_run == self.is_load_on:
                 return
             if self._pending_load_state_matches(decision.should_run):
@@ -1967,7 +1988,7 @@ class SolarLoadController:
                 return False
 
             minimum_soc = _as_float(self.config.get(CONF_MIN_BATTERY_SOC), 0)
-            if soc < minimum_soc:
+            if soc <= minimum_soc:
                 return False
 
         if (
@@ -1994,6 +2015,34 @@ class SolarLoadController:
     @property
     def _mid_forecast_assisted_run_available(self) -> bool:
         """Return whether mid mode may start the load with partial solar coverage."""
+        is_currently_assisting = (
+            self.is_load_on
+            and self._tracker.active_runtime_reason == DECISION_FORECAST_ASSISTED_RUN
+            and self._last_turned_on_at is not None
+        )
+        minutes_since_turn_on = (
+            self._minutes_since(self._last_turned_on_at)
+            if self._last_turned_on_at is not None
+            else None
+        )
+        return mid_mode_forecast_assisted_run_available(
+            is_currently_assisting=is_currently_assisting,
+            minutes_since_turn_on=minutes_since_turn_on,
+            projected_grid_import_exceeds_limit=self._projected_grid_import_exceeds_limit,
+            available_surplus_w=self.available_surplus_w,
+            effective_solar_surplus_w=self.mid_mode_solar_surplus_w,
+            load_power_w=self.load_power_w,
+            battery_power_state=self.battery_power_state,
+            assisted_hold_minutes=MID_FORECAST_ASSISTED_HOLD_MINUTES,
+        )
+
+    @property
+    def _forecast_assisted_run_available(self) -> bool:
+        """Return whether mid-day forecast assistance may run the load."""
+        day_class = self.forecast_day_class
+        if day_class not in (FORECAST_DAY_MODE_LOW, FORECAST_DAY_MODE_MID):
+            return False
+
         runtime_remaining_minutes = self.runtime_remaining_today_minutes
         if runtime_remaining_minutes <= 0:
             return False
@@ -2003,205 +2052,89 @@ class SolarLoadController:
         # load running even when solar later collapses.
         if self._must_force_minimum_runtime(runtime_remaining_minutes):
             return False
-        if self.available_surplus_w >= self.load_power_w:
-            return False
-        # Hold window: keep the assisted run alive for a short fixed period
-        # after the load started via forecast_run, even when the solar signal
-        # temporarily collapses.  Grid-import protection still wins immediately.
-        if (
-            self.is_load_on
-            and self._tracker.active_runtime_reason == DECISION_FORECAST_ASSISTED_RUN
-            and self._last_turned_on_at is not None
-            and self._minutes_since(self._last_turned_on_at)
-            < MID_FORECAST_ASSISTED_HOLD_MINUTES
-        ):
-            return not self._projected_grid_import_exceeds_limit
-        return should_allow_mid_mode_assisted_run(
-            effective_solar_surplus_w=self.mid_mode_solar_surplus_w,
-            load_power_w=self.load_power_w,
-            battery_power_state=self.battery_power_state,
-            projected_grid_import_exceeds_limit=self._projected_grid_import_exceeds_limit,
-        )
-
-    @property
-    def _forecast_assisted_run_available(self) -> bool:
-        """Return whether mid-day forecast assistance may run the load."""
-        day_class = self.forecast_day_class
 
         if day_class == FORECAST_DAY_MODE_MID:
             return self._mid_forecast_assisted_run_available
 
-        if day_class != FORECAST_DAY_MODE_LOW:
-            return False
-
-        runtime_remaining_minutes = self.runtime_remaining_today_minutes
-        if runtime_remaining_minutes <= 0:
-            return False
-        if self._must_force_minimum_runtime(runtime_remaining_minutes):
-            return False
-        if (
+        is_currently_assisting = (
             self.is_load_on
             and self._tracker.active_runtime_reason == DECISION_LOW_FORECAST_ASSISTED_RUN
             and self._last_turned_on_at is not None
-        ):
-            min_on_minutes = _as_float(
-                self.config.get(CONF_MIN_ON_MINUTES),
-                DEFAULT_MIN_ON_MINUTES,
-            )
-            return should_keep_low_mode_assisted_run(
-                minutes_since_turn_on=self._minutes_since(self._last_turned_on_at),
-                configured_min_on_minutes=min_on_minutes,
-                assisted_hold_minutes=LOW_FORECAST_ASSISTED_HOLD_MINUTES,
-                projected_grid_import_exceeds_limit=self._projected_grid_import_exceeds_limit,
-                forecast_next_hour_kwh=self._forecast_next_hour_kwh,
-                forecast_wait_threshold_kwh=self.low_mode_forecast_wait_threshold_kwh,
-                effective_solar_surplus_w=self.low_mode_assisted_hold_support_w,
-                current_effective_solar_surplus_w=self.low_mode_assisted_start_surplus_w,
-                required_surplus_w=self.low_mode_assisted_surplus_threshold_w,
-                assist_priority=self.low_mode_assisted_priority,
-                forecast_override_ratio_span=(
-                    LOW_FORECAST_ASSISTED_FORECAST_OVERRIDE_RATIO_SPAN
-                ),
-                forecast_override_exponent=(
-                    LOW_FORECAST_ASSISTED_FORECAST_OVERRIDE_EXPONENT
-                ),
-                surplus_late_relief_ratio=(
-                    LOW_FORECAST_ASSISTED_SURPLUS_LATE_RELIEF_RATIO
-                ),
-                forecast_late_relief_ratio=(
-                    LOW_FORECAST_ASSISTED_FORECAST_LATE_RELIEF_RATIO
-                ),
-                hold_surplus_ratio=LOW_FORECAST_ASSISTED_HOLD_SURPLUS_RATIO,
-                hold_forecast_ratio=LOW_FORECAST_ASSISTED_HOLD_FORECAST_RATIO,
-                collapse_floor_ratio=LOW_FORECAST_ASSISTED_HOLD_COLLAPSE_RATIO,
-            )
-        if self.available_surplus_w >= self.load_power_w:
-            return False
-
-        return should_allow_low_mode_assisted_run(
-            effective_solar_surplus_w=self.low_mode_assisted_start_surplus_w,
+        )
+        minutes_since_turn_on = (
+            self._minutes_since(self._last_turned_on_at)
+            if self._last_turned_on_at is not None
+            else None
+        )
+        min_on_minutes = _as_float(
+            self.config.get(CONF_MIN_ON_MINUTES),
+            DEFAULT_MIN_ON_MINUTES,
+        )
+        return low_mode_forecast_assisted_run_available(
+            is_currently_assisting=is_currently_assisting,
+            minutes_since_turn_on=minutes_since_turn_on,
+            configured_min_on_minutes=min_on_minutes,
+            assisted_hold_minutes=LOW_FORECAST_ASSISTED_HOLD_MINUTES,
             projected_grid_import_exceeds_limit=self._projected_grid_import_exceeds_limit,
-            battery_power_state=self.battery_power_state,
             forecast_next_hour_kwh=self._forecast_next_hour_kwh,
             forecast_wait_threshold_kwh=self.low_mode_forecast_wait_threshold_kwh,
+            effective_solar_surplus_w=self.low_mode_assisted_start_surplus_w,
+            hold_support_w=self.low_mode_assisted_hold_support_w,
             required_surplus_w=self.low_mode_assisted_surplus_threshold_w,
             assist_priority=self.low_mode_assisted_priority,
-            forecast_override_ratio_span=(
-                LOW_FORECAST_ASSISTED_FORECAST_OVERRIDE_RATIO_SPAN
-            ),
-            forecast_override_exponent=(
-                LOW_FORECAST_ASSISTED_FORECAST_OVERRIDE_EXPONENT
-            ),
-            surplus_late_relief_ratio=(
-                LOW_FORECAST_ASSISTED_SURPLUS_LATE_RELIEF_RATIO
-            ),
-            forecast_late_relief_ratio=(
-                LOW_FORECAST_ASSISTED_FORECAST_LATE_RELIEF_RATIO
-            ),
+            available_surplus_w=self.available_surplus_w,
+            load_power_w=self.load_power_w,
+            battery_power_state=self.battery_power_state,
+            forecast_override_ratio_span=LOW_FORECAST_ASSISTED_FORECAST_OVERRIDE_RATIO_SPAN,
+            forecast_override_exponent=LOW_FORECAST_ASSISTED_FORECAST_OVERRIDE_EXPONENT,
+            surplus_late_relief_ratio=LOW_FORECAST_ASSISTED_SURPLUS_LATE_RELIEF_RATIO,
+            forecast_late_relief_ratio=LOW_FORECAST_ASSISTED_FORECAST_LATE_RELIEF_RATIO,
+            hold_surplus_ratio=LOW_FORECAST_ASSISTED_HOLD_SURPLUS_RATIO,
+            hold_forecast_ratio=LOW_FORECAST_ASSISTED_HOLD_FORECAST_RATIO,
+            collapse_floor_ratio=LOW_FORECAST_ASSISTED_HOLD_COLLAPSE_RATIO,
         )
 
     @property
     def _export_guard_run_available(self) -> bool:
         """Return whether forecast suggests running now to avoid clipping later."""
-        if self.forecast_day_class != FORECAST_DAY_MODE_HIGH:
-            return False
-        if (
-            not self.is_load_on
-            and self.grid_import_w is not None
-            and self.grid_import_w > HIGH_FORECAST_NO_GRID_TOLERANCE_W
-        ):
-            return False
-        if self._high_forecast_grid_import_active:
-            return False
-        if self._should_prioritize_battery_after_runtime():
-            return False
-        if self.available_surplus_w >= self.load_power_w:
-            return True
-        if not self._allow_post_runtime_export_guard_restart():
-            return False
-        if (
-            (
-                self.available_surplus_w + self.usable_battery_charge_w
-            ) >= self.load_power_w
-            and (self.is_load_on or self.battery_power_state == "charging")
-        ):
-            return True
-
-        forecast_remaining_kwh = self.forecast_remaining_today_kwh
-        battery_charge_required_kwh = self.battery_charge_required_kwh
-        if (
-            forecast_remaining_kwh is None
-            or battery_charge_required_kwh is None
-        ):
-            return False
-
-        # Allow export_guard when forecast has enough headroom over battery needs,
-        # even without real-time surplus at this moment.
-        # available_surplus_w >= load_power_w is already handled above (returns True early),
-        # so that condition must not be repeated here.
-        #
-        # Guard: do not trigger via forecast-headroom when the battery is actively
-        # discharging to cover household load *and* PV alone is below the load
-        # power.  In that state the low grid-import reading is an artefact of
-        # Solarbank self-discharge management, not a solar surplus signal.
-        # Starting the load forces the battery to also power the pump; when the
-        # Solarbank resets to charging mode the grid-import limit fires within
-        # minutes and kills the run — burning energy and battery cycles for nothing.
-        pv_w = self.pv_current_power_w
-        if self.battery_power_state == "discharging" and (
-            pv_w is None or pv_w < self.load_power_w
-        ):
-            return False
-
-        return (
-            forecast_remaining_kwh
-            >= battery_charge_required_kwh * HIGH_FORECAST_CURTAILMENT_HEADROOM_RATIO
+        return export_guard_run_available(
+            forecast_day_class=self.forecast_day_class,
+            high_forecast_day_class=FORECAST_DAY_MODE_HIGH,
+            is_load_on=self.is_load_on,
+            grid_import_w=self.grid_import_w,
+            grid_import_no_grid_tolerance_w=HIGH_FORECAST_NO_GRID_TOLERANCE_W,
+            high_forecast_grid_import_active=self._high_forecast_grid_import_active,
+            should_prioritize_battery=self._should_prioritize_battery_after_runtime(),
+            allow_post_runtime_restart=self._allow_post_runtime_export_guard_restart(),
+            available_surplus_w=self.available_surplus_w,
+            usable_battery_charge_w=self.usable_battery_charge_w,
+            load_power_w=self.load_power_w,
+            battery_power_state=self.battery_power_state,
+            pv_current_power_w=self.pv_current_power_w,
+            forecast_remaining_kwh=self.forecast_remaining_today_kwh,
+            battery_charge_required_kwh=self.battery_charge_required_kwh,
+            curtailment_headroom_ratio=HIGH_FORECAST_CURTAILMENT_HEADROOM_RATIO,
         )
 
     def _should_prioritize_battery_after_runtime(self) -> bool:
         """Return whether the battery should win over optional high-mode runtime."""
-        # Battery priority after runtime is a high-mode concept only.
-        # On low and mid days the minimum runtime is the only target; once it
-        # is met the load simply stops (runtime_met).  Applying high-mode
-        # battery reservation logic on those days would incorrectly block solar
-        # surplus runs and emit a confusing battery_priority reason.
-        if self.forecast_day_class != FORECAST_DAY_MODE_HIGH:
-            return False
-        if self.runtime_remaining_today_minutes > 0:
-            return False
-
         battery_headroom_kwh = self._battery_headroom_to_target_kwh(
             HIGH_FORECAST_POST_RUNTIME_BATTERY_TARGET_SOC
         )
         battery_charge_required_kwh = self._charging_input_energy_for_storage(
             battery_headroom_kwh
         )
-        if (
-            battery_headroom_kwh is not None
-            and battery_headroom_kwh <= HIGH_FORECAST_POST_RUNTIME_BATTERY_HEADROOM_KWH
-        ):
-            return False
-
-        battery_soc = self.battery_soc
-        if battery_soc is None:
-            return self.battery_power_state == "charging"
-
-        if battery_soc >= HIGH_FORECAST_POST_RUNTIME_BATTERY_TARGET_SOC:
-            return False
-
-        forecast_remaining_kwh = self.forecast_remaining_today_kwh
-        if (
-            forecast_remaining_kwh is None
-            or battery_charge_required_kwh is None
-        ):
-            return True
-
-        household_reserve_kwh = self.high_mode_household_reserve_kwh
-        return (
-            forecast_remaining_kwh
-            < battery_charge_required_kwh
-            + household_reserve_kwh
-            + self.high_mode_time_priority_buffer_kwh
+        return should_prioritize_battery_after_runtime(
+            forecast_day_class=self.forecast_day_class,
+            high_forecast_day_class=FORECAST_DAY_MODE_HIGH,
+            runtime_remaining_minutes=self.runtime_remaining_today_minutes,
+            battery_headroom_kwh=battery_headroom_kwh,
+            battery_charge_required_kwh=battery_charge_required_kwh,
+            battery_soc=self.battery_soc,
+            battery_power_state=self.battery_power_state,
+            forecast_remaining_kwh=self.forecast_remaining_today_kwh,
+            household_reserve_kwh=self.high_mode_household_reserve_kwh,
+            time_priority_buffer_kwh=self.high_mode_time_priority_buffer_kwh,
         )
 
     def _allow_post_runtime_export_guard_restart(self) -> bool:

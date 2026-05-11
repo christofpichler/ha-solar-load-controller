@@ -26,9 +26,25 @@ from custom_components.solar_load_controller.mid_mode import (
     MID_FORECAST_ASSISTED_HOLD_MINUTES,
     MID_FORECAST_ASSISTED_SURPLUS_RATIO,
     MID_FORECAST_WAIT_NEXT_HOUR_RATIO,
+    forecast_assisted_run_available as mid_mode_forecast_assisted_run_available,
     should_allow_mid_mode_assisted_run,
     should_wait_for_mid_forecast,
 )
+
+
+def _mid_assisted_run_inputs(**overrides):
+    base = dict(
+        is_currently_assisting=False,
+        minutes_since_turn_on=None,
+        projected_grid_import_exceeds_limit=False,
+        available_surplus_w=100.0,
+        effective_solar_surplus_w=300.0,
+        load_power_w=450.0,
+        battery_power_state="neutral",
+        assisted_hold_minutes=MID_FORECAST_ASSISTED_HOLD_MINUTES,
+    )
+    base.update(overrides)
+    return base
 
 
 LOAD_W = 450.0
@@ -241,6 +257,79 @@ class TestMidModeConstants(unittest.TestCase):
     def test_hold_minutes_is_less_than_one_hour(self) -> None:
         """Hold window should not be absurdly long."""
         self.assertLess(MID_FORECAST_ASSISTED_HOLD_MINUTES, 60)
+
+
+class MidModeForecastAssistedRunAvailableTest(unittest.TestCase):
+    """Unit tests for the mid-mode assisted-run orchestrator."""
+
+    def test_strong_solar_above_load_blocks_assisted_start(self) -> None:
+        self.assertFalse(
+            mid_mode_forecast_assisted_run_available(
+                **_mid_assisted_run_inputs(
+                    available_surplus_w=500.0, load_power_w=450.0
+                )
+            )
+        )
+
+    def test_active_assist_holds_within_window_with_no_grid_import(self) -> None:
+        self.assertTrue(
+            mid_mode_forecast_assisted_run_available(
+                **_mid_assisted_run_inputs(
+                    is_currently_assisting=True,
+                    minutes_since_turn_on=1.0,
+                )
+            )
+        )
+
+    def test_grid_import_cancels_hold(self) -> None:
+        self.assertFalse(
+            mid_mode_forecast_assisted_run_available(
+                **_mid_assisted_run_inputs(
+                    is_currently_assisting=True,
+                    minutes_since_turn_on=1.0,
+                    projected_grid_import_exceeds_limit=True,
+                )
+            )
+        )
+
+    def test_active_assist_releases_after_hold_window(self) -> None:
+        # When the hold window has passed, fall through to should_allow logic
+        # which requires sufficient solar coverage.
+        self.assertFalse(
+            mid_mode_forecast_assisted_run_available(
+                **_mid_assisted_run_inputs(
+                    is_currently_assisting=True,
+                    minutes_since_turn_on=999.0,
+                    effective_solar_surplus_w=50.0,
+                )
+            )
+        )
+
+    def test_new_start_when_solar_meets_threshold(self) -> None:
+        load_w = 450.0
+        threshold_w = load_w * MID_FORECAST_ASSISTED_SURPLUS_RATIO
+        self.assertTrue(
+            mid_mode_forecast_assisted_run_available(
+                **_mid_assisted_run_inputs(
+                    is_currently_assisting=False,
+                    load_power_w=load_w,
+                    available_surplus_w=threshold_w,
+                    effective_solar_surplus_w=threshold_w,
+                    battery_power_state="charging",
+                )
+            )
+        )
+
+    def test_discharging_battery_blocks_new_start(self) -> None:
+        self.assertFalse(
+            mid_mode_forecast_assisted_run_available(
+                **_mid_assisted_run_inputs(
+                    is_currently_assisting=False,
+                    battery_power_state="discharging",
+                    effective_solar_surplus_w=400.0,
+                )
+            )
+        )
 
 
 if __name__ == "__main__":

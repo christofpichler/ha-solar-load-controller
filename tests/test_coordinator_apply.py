@@ -132,7 +132,9 @@ dt_module.now = _utcnow
 util.dt = dt_module
 
 from custom_components.solar_load_controller.const import (
+    BATTERY_MODE_USE,
     CONF_BATTERY_CAPACITY_KWH,
+    CONF_BATTERY_MODE,
     CONF_BATTERY_POWER_SENSOR,
     CONF_BATTERY_SOC_SENSOR,
     CONF_FORECAST_NEXT_HOUR_SENSOR,
@@ -141,6 +143,7 @@ from custom_components.solar_load_controller.const import (
     CONF_GRID_EXPORT_SENSOR,
     CONF_GRID_IMPORT_SENSOR,
     CONF_MIN_DAILY_RUNTIME_MINUTES,
+    CONF_MIN_BATTERY_SOC,
     DECISION_AUTOMATION_PAUSED,
     DECISION_FORECAST_ASSISTED_RUN,
     FORECAST_DAY_MODE_HIGH,
@@ -401,6 +404,28 @@ class CoordinatorApplyTest(unittest.IsolatedAsyncioTestCase):
         controller._daily_forecast_today_kwh = 12.0
 
         self.assertFalse(controller._export_guard_run_available)
+
+    def test_battery_force_rejects_soc_at_minimum_boundary(self) -> None:
+        from unittest.mock import PropertyMock, patch
+
+        hass = _FakeHassImpl()
+        hass.states.set("sensor.battery_soc", "10", "%")
+        controller = _TestController(hass, _FakeConfigEntry())
+        controller.config.update(
+            {
+                CONF_BATTERY_MODE: BATTERY_MODE_USE,
+                CONF_BATTERY_SOC_SENSOR: "sensor.battery_soc",
+                CONF_MIN_BATTERY_SOC: 10,
+            }
+        )
+
+        with patch.object(
+            type(controller),
+            "_projected_grid_import_exceeds_limit",
+            new_callable=PropertyMock,
+        ) as mock_exceeds_limit:
+            mock_exceeds_limit.return_value = True
+            self.assertFalse(controller._battery_can_support_forced_runtime(60.0))
 
     def test_energy_sensor_logs_unavailable_state(self) -> None:
         hass = _FakeHassImpl()
