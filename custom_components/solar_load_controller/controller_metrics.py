@@ -287,7 +287,7 @@ class ControllerMetricsMixin:
 
     @property
     def mid_mode_solar_surplus_w(self) -> float:
-        return self.available_surplus_w
+        return self.effective_solar_surplus_w
 
     @property
     def mid_mode_forecast_wait_threshold_kwh(self) -> float:

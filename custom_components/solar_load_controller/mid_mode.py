@@ -9,7 +9,8 @@ Mid mode is a calm, independent mode for days with moderate solar yield
   signal temporarily collapses.  Grid-import protection still applies.
   There is no decayed support signal or hysteresis beyond this plain timer.
 * No force cascade — minimum runtime forcing remains a low-mode responsibility.
-* No battery mixing — only grid-free solar surplus (available_surplus_w) is used.
+* No battery discharge — charging solar that is usable on the AC side may count,
+  but an actively discharging battery blocks assisted starts.
 * No next-hour fallback — if forecast_next_hour_kwh is unavailable, mid mode
   uses whatever current solar is available instead of waiting.
 
@@ -50,9 +51,10 @@ def should_allow_mid_mode_assisted_run(
 ) -> bool:
     """Return whether mid mode may start the load with partial solar coverage.
 
-    Mid mode uses only grid-free solar surplus (available_surplus_w) — callers
-    must NOT pass a battery-boosted surplus value here.  The check is
-    intentionally simple: no pressure curve, no priority adjustment.
+    Mid mode uses AC-usable solar surplus, including solar that is currently
+    being diverted into battery charging. It still blocks assisted starts while
+    the battery is discharging. The check is intentionally simple: no pressure
+    curve, no priority adjustment.
     """
     if projected_grid_import_exceeds_limit:
         return False

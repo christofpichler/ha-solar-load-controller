@@ -142,8 +142,11 @@ from custom_components.solar_load_controller.const import (
     CONF_FORECAST_TODAY_SENSOR,
     CONF_GRID_EXPORT_SENSOR,
     CONF_GRID_IMPORT_SENSOR,
+    CONF_INVERTER_LIMIT_W,
+    CONF_LOAD_POWER_W,
     CONF_MIN_DAILY_RUNTIME_MINUTES,
     CONF_MIN_BATTERY_SOC,
+    CONF_PV_CURRENT_POWER_SENSOR,
     DECISION_AUTOMATION_PAUSED,
     DECISION_FORECAST_ASSISTED_RUN,
     FORECAST_DAY_MODE_HIGH,
@@ -406,6 +409,32 @@ class CoordinatorApplyTest(unittest.IsolatedAsyncioTestCase):
         controller._daily_forecast_today_kwh = 12.0
 
         self.assertFalse(controller._export_guard_run_available)
+
+    def test_mid_mode_uses_ac_usable_charging_power_for_assist(self) -> None:
+        hass = _FakeHassImpl()
+        hass.states.set("switch.pool", "off")
+        hass.states.set("sensor.grid_import", "0", "W")
+        hass.states.set("sensor.grid_export", "0", "W")
+        hass.states.set("sensor.battery_power", "900", "W")
+        hass.states.set("sensor.pv_power", "1400", "W")
+
+        controller = _TestController(hass, _FakeConfigEntry())
+        controller.config.update(
+            {
+                CONF_GRID_IMPORT_SENSOR: "sensor.grid_import",
+                CONF_GRID_EXPORT_SENSOR: "sensor.grid_export",
+                CONF_BATTERY_POWER_SENSOR: "sensor.battery_power",
+                CONF_PV_CURRENT_POWER_SENSOR: "sensor.pv_power",
+                CONF_INVERTER_LIMIT_W: 1000.0,
+                CONF_LOAD_POWER_W: 400.0,
+            }
+        )
+        controller._daily_forecast_date = coordinator_today()
+        controller._daily_forecast_day_class = FORECAST_DAY_MODE_MID
+
+        self.assertEqual(controller.available_surplus_w, 0.0)
+        self.assertEqual(controller.mid_mode_solar_surplus_w, 500.0)
+        self.assertTrue(controller._mid_forecast_assisted_run_available)
 
     def test_battery_force_rejects_soc_at_minimum_boundary(self) -> None:
         from unittest.mock import PropertyMock, patch
