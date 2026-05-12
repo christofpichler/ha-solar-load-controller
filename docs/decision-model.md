@@ -358,8 +358,9 @@ Mid mode is intentionally calm and flat:
   cancels immediately; this prevents rapid cycling on installations with noisy
   solar measurements (e.g. microinverters that report 0 W briefly)
 - no force cascade — it never escalates to `runtime_force` on its own
-- no battery mixing — it only uses effective solar surplus, never active battery
-  discharge
+- no battery discharge — mid mode may count AC-usable solar that is currently
+  routed into battery charging, but it blocks assisted starts while the battery
+  is actively discharging
 
 `runtime_force` is still available via the shared coordinator path, but mid mode
 itself does not activate it. If minimum runtime is not met by end of day and low
@@ -378,9 +379,13 @@ Mid mode has two main phases:
      mode which waits defensively when next-hour data is missing)
 
 2. **Allow a controlled assisted start when current solar is strong enough**
-   - if effective solar surplus meets a fixed threshold (55% of load power by
-     default) and the projected grid situation is clean, it emits `forecast_run`
+   - if AC-usable effective solar surplus meets a fixed threshold (55% of load
+     power by default) and the projected grid situation is clean, it emits
+     `forecast_run`
      (`DECISION_FORECAST_ASSISTED_RUN`)
+   - charging solar can count here; this lets mid mode use moderate solar
+     windows instead of letting the battery absorb the whole window first
+   - active battery discharge still blocks assisted starts
    - the threshold is not time-scaled — it is the same at 09:00 as at 15:00
 
 When neither condition applies and there is no real solar surplus, the decision
@@ -392,9 +397,12 @@ force path activates it).
 In [mid_mode.py](/Users/A200029998/Documents/pool-automation/custom_components/solar_load_controller/mid_mode.py):
 
 - `should_allow_mid_mode_assisted_run(...)`
-  - returns `True` when effective solar surplus meets the fixed ratio threshold,
-    the projected grid import is below the limit, and the battery is not actively
-    discharging
+  - returns `True` when AC-usable effective solar surplus meets the fixed ratio
+    threshold, the projected grid import is below the limit, and the battery is
+    not actively discharging
+  - charging battery power may contribute through `effective_solar_surplus_w`
+    when it is still usable on the AC side; clipped PV above the configured
+    inverter limit is excluded by the shared surplus calculation
   - blocking conditions: `projected_grid_import_exceeds_limit`, battery
     `discharging`, or `load_power_w <= 0`
 
@@ -416,8 +424,8 @@ These are defined in
 [mid_mode.py](/Users/A200029998/Documents/pool-automation/custom_components/solar_load_controller/mid_mode.py).
 
 - `MID_FORECAST_ASSISTED_SURPLUS_RATIO = 0.55`
-  - the effective solar surplus must be at least 55% of load power for an
-    assisted start; this is a flat ratio with no time-of-day scaling
+  - the AC-usable effective solar surplus must be at least 55% of load power
+    for an assisted start; this is a flat ratio with no time-of-day scaling
 
 - `MID_FORECAST_WAIT_NEXT_HOUR_RATIO = 0.75`
   - the next-hour forecast threshold is computed as 75% of load power converted

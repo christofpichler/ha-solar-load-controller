@@ -195,11 +195,9 @@ def evaluate_decision(inputs: DecisionInputs) -> DecisionResult:
         if inputs.forecast_day_class == "low":
             reason = DECISION_LOW_FORECAST_ASSISTED_RUN
         else:
-            # DECISION_FORECAST_ASSISTED_RUN ("forecast_run") is reserved for
-            # mid-mode, which is not yet implemented. The coordinator currently
-            # only sets forecast_assisted_run_available=True for low-day class,
-            # so this branch is unreachable in production. It will become active
-            # once mid_mode.py is introduced.
+            # forecast_run is currently the mid-mode assisted-run reason. The
+            # coordinator is responsible for only setting this flag for modes
+            # that intentionally use the shared forecast-assisted decision.
             reason = DECISION_FORECAST_ASSISTED_RUN
     elif inputs.must_force_minimum_runtime:
         if (
@@ -363,7 +361,7 @@ def _build_summary(inputs: DecisionInputs, should_run: bool, reason: str) -> str
     if reason == DECISION_SOLAR_SURPLUS_AVAILABLE:
         return "solar: surplus covers load"
     if reason == DECISION_FORECAST_ASSISTED_RUN:
-        return "forecast_run: high forecast with partial surplus"
+        return "forecast_run: mid forecast with AC-usable solar support"
     if reason == DECISION_LOW_FORECAST_ASSISTED_RUN:
         return "low_assist: partial solar with forecast support"
     if reason == DECISION_FORECAST_WAIT:

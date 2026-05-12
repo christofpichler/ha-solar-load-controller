@@ -157,7 +157,9 @@ household reserve, and the late-day battery-priority buffer.
 Mid mode is the calm middle band between low and high. It can wait for a
 clearly better next-hour window, allow a simple assisted start via
 `forecast_run`, and otherwise falls through to the shared completion logic
-without low-mode pressure or hold hysteresis.
+without low-mode pressure or hold hysteresis. The assisted start uses
+AC-usable current solar support, including solar currently routed into battery
+charging, but never active battery discharge.
 
 ### Low Mode
 
