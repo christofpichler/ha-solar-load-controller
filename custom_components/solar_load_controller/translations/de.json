@@ -1,6 +1,9 @@
 {
   "title": "Solar Load Controller",
   "config": {
+    "error": {
+      "low_threshold_too_high": "Die Mid-Schwelle muss kleiner sein als die High-Schwelle."
+    },
     "step": {
       "user": {
         "title": "1/6 Verbraucher",
@@ -64,9 +67,10 @@
       },
       "modes": {
         "title": "5/6 Modi",
-        "description": "Hier liegt das Verhalten der Modi. Low und High haben bereits eigene Einstellungen. Mid bekommt später auf dieser Seite seine eigenen Parameter.",
+        "description": "Hier liegt das Verhalten der Modi. Low, Mid und High haben jeweils eigene Einstellungen.",
         "data": {
           "grid_import_limit_w": "Netzlimit im Low-Modus",
+          "forecast_low_threshold_kwh_per_kwp": "Mid-Modus ab (kWh/kWp)",
           "forecast_high_threshold_kwh_per_kwp": "High-Modus ab (kWh/kWp)",
           "high_mode_base_household_load_w": "High-Grundverbrauch Haushalt",
           "high_mode_household_reserve_margin_percent": "High-Reserveaufschlag Haushalt",
@@ -75,7 +79,8 @@
         },
         "data_description": {
           "grid_import_limit_w": "Maximaler Netzbezug, der im Low-Modus erlaubt ist, bevor der Verbraucher blockiert oder gestoppt wird. Im High-Modus gilt eine deutlich strengere Import-Regel.",
-          "forecast_high_threshold_kwh_per_kwp": "Wenn die Tagesprognose pro kWp diesen Wert erreicht, wird der Tag als High-Modus behandelt. Mid wird später zwischen Low und High liegen.",
+          "forecast_low_threshold_kwh_per_kwp": "Wenn die Tagesprognose pro kWp diesen Wert erreicht, wird der Tag als Mid-Modus behandelt. Tage darunter bleiben Low.",
+          "forecast_high_threshold_kwh_per_kwp": "Wenn die Tagesprognose pro kWp diesen Wert erreicht, wird der Tag als High-Modus behandelt. Mid liegt zwischen Low und High.",
           "high_mode_base_household_load_w": "Wird nur auf High-Tagen verwendet, nachdem die tägliche Mindestlaufzeit bereits erreicht ist. Das ist der erwartete laufende Grundverbrauch des Haushalts, der vor optionaler weiterer Laufzeit aus der Restprognose reserviert werden soll.",
           "high_mode_household_reserve_margin_percent": "Zusätzlicher Sicherheitsaufschlag auf den Grundverbrauch, um schwankende spätere Haushaltslasten abzufangen.",
           "min_runtime_battery_override": "Wenn aktiv, darf der Low-Modus den Verbraucher trotzdem starten, um die tägliche Mindestlaufzeit zu erreichen, auch wenn der normale Akkuschutz die erzwungene Laufzeit sonst blockieren würde.",
@@ -95,6 +100,9 @@
     }
   },
   "options": {
+    "error": {
+      "low_threshold_too_high": "Die Mid-Schwelle muss kleiner sein als die High-Schwelle."
+    },
     "step": {
       "init": {
         "title": "Optionen: 1/6 Verbraucher",
@@ -158,9 +166,10 @@
       },
       "modes": {
         "title": "Optionen: 5/6 Modi",
-        "description": "Hier liegt das Verhalten der Modi. Low und High haben bereits eigene Einstellungen. Mid bekommt später auf dieser Seite seine eigenen Parameter.",
+        "description": "Hier liegt das Verhalten der Modi. Low, Mid und High haben jeweils eigene Einstellungen.",
         "data": {
           "grid_import_limit_w": "Netzlimit im Low-Modus",
+          "forecast_low_threshold_kwh_per_kwp": "Mid-Modus ab (kWh/kWp)",
           "forecast_high_threshold_kwh_per_kwp": "High-Modus ab (kWh/kWp)",
           "high_mode_base_household_load_w": "High-Grundverbrauch Haushalt",
           "high_mode_household_reserve_margin_percent": "High-Reserveaufschlag Haushalt",
@@ -169,7 +178,8 @@
         },
         "data_description": {
           "grid_import_limit_w": "Maximaler Netzbezug, der im Low-Modus erlaubt ist, bevor der Verbraucher blockiert oder gestoppt wird. Im High-Modus gilt eine deutlich strengere Import-Regel.",
-          "forecast_high_threshold_kwh_per_kwp": "Wenn die Tagesprognose pro kWp diesen Wert erreicht, wird der Tag als High-Modus behandelt. Mid wird später zwischen Low und High liegen.",
+          "forecast_low_threshold_kwh_per_kwp": "Wenn die Tagesprognose pro kWp diesen Wert erreicht, wird der Tag als Mid-Modus behandelt. Tage darunter bleiben Low.",
+          "forecast_high_threshold_kwh_per_kwp": "Wenn die Tagesprognose pro kWp diesen Wert erreicht, wird der Tag als High-Modus behandelt. Mid liegt zwischen Low und High.",
           "high_mode_base_household_load_w": "Wird nur auf High-Tagen verwendet, nachdem die tägliche Mindestlaufzeit bereits erreicht ist. Das ist der erwartete laufende Grundverbrauch des Haushalts, der vor optionaler weiterer Laufzeit aus der Restprognose reserviert werden soll.",
           "high_mode_household_reserve_margin_percent": "Zusätzlicher Sicherheitsaufschlag auf den Grundverbrauch, um schwankende spätere Haushaltslasten abzufangen.",
           "min_runtime_battery_override": "Wenn aktiv, darf der Low-Modus den Verbraucher trotzdem starten, um die tägliche Mindestlaufzeit zu erreichen, auch wenn der normale Akkuschutz die erzwungene Laufzeit sonst blockieren würde.",
@@ -205,6 +215,7 @@
       "options": {
         "auto": "Auto",
         "low": "Low",
+        "mid": "Mid",
         "high": "High"
       }
     }
@@ -253,6 +264,7 @@
         "state": {
           "auto": "Auto",
           "low": "Low",
+          "mid": "Mid",
           "high": "High",
           "unknown": "Unbekannt"
         }

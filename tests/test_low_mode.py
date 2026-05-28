@@ -484,5 +484,100 @@ class LowModeHelperTest(unittest.TestCase):
         )
 
 
+from custom_components.solar_load_controller.low_mode import (
+    forecast_assisted_run_available as low_mode_forecast_assisted_run_available,
+)
+
+
+def _low_assisted_run_inputs(**overrides):
+    base = dict(
+        is_currently_assisting=False,
+        minutes_since_turn_on=None,
+        configured_min_on_minutes=5.0,
+        assisted_hold_minutes=3.0,
+        projected_grid_import_exceeds_limit=False,
+        forecast_next_hour_kwh=0.5,
+        forecast_wait_threshold_kwh=0.3,
+        effective_solar_surplus_w=600.0,
+        hold_support_w=600.0,
+        required_surplus_w=400.0,
+        assist_priority=0.5,
+        available_surplus_w=100.0,
+        load_power_w=400.0,
+        battery_power_state="charging",
+        forecast_override_ratio_span=1.0,
+        forecast_override_exponent=2.4,
+        surplus_late_relief_ratio=0.6,
+        forecast_late_relief_ratio=0.9,
+        hold_surplus_ratio=0.6,
+        hold_forecast_ratio=0.6,
+        collapse_floor_ratio=0.5,
+    )
+    base.update(overrides)
+    return base
+
+
+class LowModeForecastAssistedRunAvailableTest(unittest.TestCase):
+    """Unit tests for the low-mode assisted-run orchestrator."""
+
+    def test_strong_solar_already_above_load_blocks_new_start(self) -> None:
+        self.assertFalse(
+            low_mode_forecast_assisted_run_available(
+                **_low_assisted_run_inputs(
+                    available_surplus_w=500.0, load_power_w=400.0
+                )
+            )
+        )
+
+    def test_active_assist_holds_within_window(self) -> None:
+        self.assertTrue(
+            low_mode_forecast_assisted_run_available(
+                **_low_assisted_run_inputs(
+                    is_currently_assisting=True,
+                    minutes_since_turn_on=1.0,
+                    forecast_next_hour_kwh=1.0,
+                )
+            )
+        )
+
+    def test_active_assist_releases_after_hold_window(self) -> None:
+        self.assertFalse(
+            low_mode_forecast_assisted_run_available(
+                **_low_assisted_run_inputs(
+                    is_currently_assisting=True,
+                    minutes_since_turn_on=999.0,
+                )
+            )
+        )
+
+    def test_new_start_when_solar_below_load_and_forecast_strong(self) -> None:
+        self.assertTrue(
+            low_mode_forecast_assisted_run_available(
+                **_low_assisted_run_inputs(
+                    available_surplus_w=100.0,
+                    load_power_w=400.0,
+                    forecast_next_hour_kwh=1.0,
+                    effective_solar_surplus_w=900.0,
+                )
+            )
+        )
+
+    def test_grid_import_exceeds_limit_blocks_start(self) -> None:
+        self.assertFalse(
+            low_mode_forecast_assisted_run_available(
+                **_low_assisted_run_inputs(
+                    projected_grid_import_exceeds_limit=True,
+                )
+            )
+        )
+
+    def test_discharging_battery_blocks_new_start(self) -> None:
+        self.assertFalse(
+            low_mode_forecast_assisted_run_available(
+                **_low_assisted_run_inputs(battery_power_state="discharging")
+            )
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -276,6 +276,73 @@ def should_allow_assisted_run(
     return forecast_next_hour_kwh >= assisted_forecast_threshold_kwh
 
 
+def forecast_assisted_run_available(
+    *,
+    is_currently_assisting: bool,
+    minutes_since_turn_on: float | None,
+    configured_min_on_minutes: float,
+    assisted_hold_minutes: float,
+    projected_grid_import_exceeds_limit: bool,
+    forecast_next_hour_kwh: float | None,
+    forecast_wait_threshold_kwh: float,
+    effective_solar_surplus_w: float,
+    hold_support_w: float,
+    required_surplus_w: float,
+    assist_priority: float,
+    available_surplus_w: float,
+    load_power_w: float,
+    battery_power_state: str,
+    forecast_override_ratio_span: float,
+    forecast_override_exponent: float,
+    surplus_late_relief_ratio: float,
+    forecast_late_relief_ratio: float,
+    hold_surplus_ratio: float,
+    hold_forecast_ratio: float,
+    collapse_floor_ratio: float,
+) -> bool:
+    """Return whether mid-day forecast assistance may run the load in low mode.
+
+    Callers must pre-check that the current day class is low and that runtime
+    is still outstanding and not already being forced. This function only
+    handles the keep-vs-start dispatch.
+    """
+    if is_currently_assisting and minutes_since_turn_on is not None:
+        return should_keep_assisted_run(
+            minutes_since_turn_on=minutes_since_turn_on,
+            configured_min_on_minutes=configured_min_on_minutes,
+            assisted_hold_minutes=assisted_hold_minutes,
+            projected_grid_import_exceeds_limit=projected_grid_import_exceeds_limit,
+            forecast_next_hour_kwh=forecast_next_hour_kwh,
+            forecast_wait_threshold_kwh=forecast_wait_threshold_kwh,
+            effective_solar_surplus_w=hold_support_w,
+            current_effective_solar_surplus_w=effective_solar_surplus_w,
+            required_surplus_w=required_surplus_w,
+            assist_priority=assist_priority,
+            forecast_override_ratio_span=forecast_override_ratio_span,
+            forecast_override_exponent=forecast_override_exponent,
+            surplus_late_relief_ratio=surplus_late_relief_ratio,
+            forecast_late_relief_ratio=forecast_late_relief_ratio,
+            hold_surplus_ratio=hold_surplus_ratio,
+            hold_forecast_ratio=hold_forecast_ratio,
+            collapse_floor_ratio=collapse_floor_ratio,
+        )
+    if available_surplus_w >= load_power_w:
+        return False
+    return should_allow_assisted_run(
+        effective_solar_surplus_w=effective_solar_surplus_w,
+        projected_grid_import_exceeds_limit=projected_grid_import_exceeds_limit,
+        battery_power_state=battery_power_state,
+        forecast_next_hour_kwh=forecast_next_hour_kwh,
+        forecast_wait_threshold_kwh=forecast_wait_threshold_kwh,
+        required_surplus_w=required_surplus_w,
+        assist_priority=assist_priority,
+        forecast_override_ratio_span=forecast_override_ratio_span,
+        forecast_override_exponent=forecast_override_exponent,
+        surplus_late_relief_ratio=surplus_late_relief_ratio,
+        forecast_late_relief_ratio=forecast_late_relief_ratio,
+    )
+
+
 def should_keep_assisted_run(
     *,
     minutes_since_turn_on: float,
@@ -300,7 +367,7 @@ def should_keep_assisted_run(
     if projected_grid_import_exceeds_limit:
         return False
 
-    hold_minutes = max(0.0, configured_min_on_minutes, assisted_hold_minutes)
+    hold_minutes = max(configured_min_on_minutes, assisted_hold_minutes)
     if minutes_since_turn_on >= hold_minutes:
         return False
 

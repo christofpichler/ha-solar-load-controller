@@ -25,6 +25,7 @@ from .const import (
     CONF_DEBUG_SENSOR_ENABLED,
     CONF_EARLIEST_START_TIME,
     CONF_FORECAST_HIGH_THRESHOLD_KWH_PER_KWP,
+    CONF_FORECAST_LOW_THRESHOLD_KWH_PER_KWP,
     CONF_FORECAST_NEXT_HOUR_SENSOR,
     CONF_FORECAST_REMAINING_TODAY_SENSOR,
     CONF_FORECAST_TODAY_SENSOR,
@@ -49,6 +50,7 @@ from .const import (
     DEFAULT_GRID_IMPORT_LIMIT_W,
     DEFAULT_EARLIEST_START_TIME,
     DEFAULT_FORECAST_HIGH_THRESHOLD_KWH_PER_KWP,
+    DEFAULT_FORECAST_LOW_THRESHOLD_KWH_PER_KWP,
     DEFAULT_LATEST_FINISH_TIME,
     DEFAULT_LOAD_POWER_W,
     DEFAULT_HIGH_MODE_BASE_HOUSEHOLD_LOAD_W,
@@ -136,14 +138,23 @@ class SolarLoadControllerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         user_input: dict[str, Any] | None = None,
     ) -> FlowResult:
         """Handle Low/High mode behavior settings."""
+        errors: dict[str, str] = {}
         if user_input is not None:
             user_input = _normalize_flow_input(user_input)
-            self._config_data.update(user_input)
-            return await self.async_step_advanced()
+            low = user_input.get(CONF_FORECAST_LOW_THRESHOLD_KWH_PER_KWP,
+                                  DEFAULT_FORECAST_LOW_THRESHOLD_KWH_PER_KWP)
+            high = user_input.get(CONF_FORECAST_HIGH_THRESHOLD_KWH_PER_KWP,
+                                   DEFAULT_FORECAST_HIGH_THRESHOLD_KWH_PER_KWP)
+            if low is not None and high is not None and float(low) >= float(high):
+                errors[CONF_FORECAST_LOW_THRESHOLD_KWH_PER_KWP] = "low_threshold_too_high"
+            if not errors:
+                self._config_data.update(user_input)
+                return await self.async_step_advanced()
 
         return self.async_show_form(
             step_id="modes",
             data_schema=vol.Schema(_mode_schema({})),
+            errors=errors,
         )
 
     async def async_step_advanced(
@@ -265,19 +276,29 @@ class SolarLoadControllerOptionsFlow(config_entries.OptionsFlow):
         user_input: dict[str, Any] | None = None,
     ) -> FlowResult:
         """Manage mode behavior options."""
-        if user_input is not None:
-            user_input = _normalize_flow_input(user_input)
-            self._options_data.update(user_input)
-            return await self.async_step_advanced()
-
+        errors: dict[str, str] = {}
         merged = _merged_flow_defaults(
             self._config_entry.data,
             self._config_entry.options,
             self._options_data,
         )
+        if user_input is not None:
+            user_input = _normalize_flow_input(user_input)
+            low = user_input.get(CONF_FORECAST_LOW_THRESHOLD_KWH_PER_KWP,
+                                  DEFAULT_FORECAST_LOW_THRESHOLD_KWH_PER_KWP)
+            high = user_input.get(CONF_FORECAST_HIGH_THRESHOLD_KWH_PER_KWP,
+                                   DEFAULT_FORECAST_HIGH_THRESHOLD_KWH_PER_KWP)
+            if low is not None and high is not None and float(low) >= float(high):
+                errors[CONF_FORECAST_LOW_THRESHOLD_KWH_PER_KWP] = "low_threshold_too_high"
+            if not errors:
+                self._options_data.update(user_input)
+                return await self.async_step_advanced()
+            merged = {**merged, **user_input}
+
         return self.async_show_form(
             step_id="modes",
             data_schema=vol.Schema(_mode_schema(merged)),
+            errors=errors,
         )
 
     async def async_step_advanced(
@@ -505,6 +526,21 @@ def _mode_schema(defaults: dict[str, Any]) -> dict[Any, Any]:
                 max=10000,
                 step=1,
                 unit_of_measurement="W",
+                mode=selector.NumberSelectorMode.BOX,
+            )
+        ),
+        vol.Required(
+            CONF_FORECAST_LOW_THRESHOLD_KWH_PER_KWP,
+            default=defaults.get(
+                CONF_FORECAST_LOW_THRESHOLD_KWH_PER_KWP,
+                DEFAULT_FORECAST_LOW_THRESHOLD_KWH_PER_KWP,
+            ),
+        ): selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0.5,
+                max=10,
+                step=0.1,
+                unit_of_measurement="kWh/kWp",
                 mode=selector.NumberSelectorMode.BOX,
             )
         ),
