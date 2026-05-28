@@ -20,49 +20,51 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up switch entities from a config entry."""
-    async_add_entities([SolarLoadAutomationPausedSwitch(hass, entry)])
+    async_add_entities([SolarLoadAutomationEnabledSwitch(hass, entry)])
 
 
-class SolarLoadAutomationPausedSwitch(SwitchEntity, RestoreEntity):
-    """Switch that pauses automatic control for manual load operation."""
+class SolarLoadAutomationEnabledSwitch(SwitchEntity, RestoreEntity):
+    """Switch that enables automatic control for the load."""
 
     _attr_has_entity_name = True
-    _attr_icon = "mdi:pause-circle"
-    _attr_translation_key = "automation_paused"
+    _attr_icon = "mdi:robot"
+    _attr_translation_key = "automation_enabled"
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
-        """Initialize the pause switch."""
+        """Initialize the automation-enabled switch."""
         self._hass = hass
         self._entry = entry
-        self._attr_unique_id = f"{entry.entry_id}_automation_paused"
+        self._attr_unique_id = f"{entry.entry_id}_automation_enabled_switch"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
             name=entry.title,
             manufacturer="Solar Load Controller",
         )
-        self._is_on = False
+        self._is_on = True
 
     @property
     def is_on(self) -> bool:
-        """Return true if automatic control is paused."""
+        """Return true if automatic control is enabled."""
         return self._is_on
 
     async def async_added_to_hass(self) -> None:
-        """Restore the pause state after Home Assistant restarts."""
+        """Restore the automation-enabled state after Home Assistant restarts."""
         if (last_state := await self.async_get_last_state()) is not None:
             self._is_on = last_state.state == STATE_ON
-            self._set_shared_pause_state(self._is_on)
+            self._set_shared_pause_state(not self._is_on)
+        else:
+            self._set_shared_pause_state(False)
 
     async def async_turn_on(self, **kwargs: object) -> None:
-        """Pause automatic control."""
+        """Enable automatic control."""
         self._is_on = True
-        self._set_shared_pause_state(True)
+        self._set_shared_pause_state(False)
         self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs: object) -> None:
-        """Resume automatic control."""
+        """Disable automatic control."""
         self._is_on = False
-        self._set_shared_pause_state(False)
+        self._set_shared_pause_state(True)
         self.async_write_ha_state()
 
     def _set_shared_pause_state(self, paused: bool) -> None:

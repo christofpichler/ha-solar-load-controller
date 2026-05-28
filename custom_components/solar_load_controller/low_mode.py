@@ -1,6 +1,38 @@
-"""Helpers for low-forecast runtime behavior."""
+"""Helpers and tuning constants for low-forecast runtime behavior."""
 
 from __future__ import annotations
+
+# ---------------------------------------------------------------------------
+# Tuning constants — all LOW_FORECAST_* live here so that coordinator.py
+# (and the future mid_mode.py) can import them from a single home.
+# ---------------------------------------------------------------------------
+
+# runtime-force pressure curve
+LOW_FORECAST_RUNTIME_BUFFER_MIN_RATIO: float = 0.15
+LOW_FORECAST_RUNTIME_BUFFER_MAX_RATIO: float = 0.75
+LOW_FORECAST_RUNTIME_BUFFER_EXPONENT: float = 1.6
+
+# wait-for-forecast threshold scaling
+LOW_FORECAST_WAIT_THRESHOLD_MIN_MULTIPLIER: float = 1.0
+LOW_FORECAST_WAIT_THRESHOLD_MAX_MULTIPLIER: float = 1.75
+
+# assisted-run surplus thresholds
+LOW_FORECAST_ASSISTED_SURPLUS_EARLY_RATIO: float = 0.85
+LOW_FORECAST_ASSISTED_SURPLUS_LATE_RATIO: float = 0.35
+LOW_FORECAST_ASSISTED_HOLD_MINUTES: float = 3.0
+LOW_FORECAST_ASSISTED_PRIORITY_EXPONENT: float = 0.65
+LOW_FORECAST_ASSISTED_SURPLUS_LATE_RELIEF_RATIO: float = 0.6
+
+# forecast-override curve shape
+LOW_FORECAST_ASSISTED_FORECAST_OVERRIDE_RATIO_SPAN: float = 1.0
+LOW_FORECAST_ASSISTED_FORECAST_OVERRIDE_EXPONENT: float = 2.4
+LOW_FORECAST_ASSISTED_FORECAST_LATE_RELIEF_RATIO: float = 0.9
+
+# assisted-hold thresholds
+LOW_FORECAST_ASSISTED_HOLD_SURPLUS_RATIO: float = 0.8
+LOW_FORECAST_ASSISTED_HOLD_FORECAST_RATIO: float = 0.75
+LOW_FORECAST_ASSISTED_HOLD_COLLAPSE_RATIO: float = 0.3
+LOW_FORECAST_ASSISTED_HOLD_SUPPORT_TIME_CONSTANT_SECONDS: float = 90.0
 
 
 def runtime_pressure(progress: float, *, exponent: float) -> float:
@@ -137,7 +169,10 @@ def assisted_run_priority(
     exponent: float,
 ) -> float:
     """Return how strongly low assist should prefer earlier PV usage."""
-    return runtime_pressure(progress, exponent=exponent)
+    clamped_progress = min(1.0, max(0.0, progress))
+    if exponent <= 0:
+        return clamped_progress
+    return clamped_progress**exponent
 
 
 def assisted_run_effective_surplus_threshold_w(
@@ -241,6 +276,73 @@ def should_allow_assisted_run(
     return forecast_next_hour_kwh >= assisted_forecast_threshold_kwh
 
 
+def forecast_assisted_run_available(
+    *,
+    is_currently_assisting: bool,
+    minutes_since_turn_on: float | None,
+    configured_min_on_minutes: float,
+    assisted_hold_minutes: float,
+    projected_grid_import_exceeds_limit: bool,
+    forecast_next_hour_kwh: float | None,
+    forecast_wait_threshold_kwh: float,
+    effective_solar_surplus_w: float,
+    hold_support_w: float,
+    required_surplus_w: float,
+    assist_priority: float,
+    available_surplus_w: float,
+    load_power_w: float,
+    battery_power_state: str,
+    forecast_override_ratio_span: float,
+    forecast_override_exponent: float,
+    surplus_late_relief_ratio: float,
+    forecast_late_relief_ratio: float,
+    hold_surplus_ratio: float,
+    hold_forecast_ratio: float,
+    collapse_floor_ratio: float,
+) -> bool:
+    """Return whether mid-day forecast assistance may run the load in low mode.
+
+    Callers must pre-check that the current day class is low and that runtime
+    is still outstanding and not already being forced. This function only
+    handles the keep-vs-start dispatch.
+    """
+    if is_currently_assisting and minutes_since_turn_on is not None:
+        return should_keep_assisted_run(
+            minutes_since_turn_on=minutes_since_turn_on,
+            configured_min_on_minutes=configured_min_on_minutes,
+            assisted_hold_minutes=assisted_hold_minutes,
+            projected_grid_import_exceeds_limit=projected_grid_import_exceeds_limit,
+            forecast_next_hour_kwh=forecast_next_hour_kwh,
+            forecast_wait_threshold_kwh=forecast_wait_threshold_kwh,
+            effective_solar_surplus_w=hold_support_w,
+            current_effective_solar_surplus_w=effective_solar_surplus_w,
+            required_surplus_w=required_surplus_w,
+            assist_priority=assist_priority,
+            forecast_override_ratio_span=forecast_override_ratio_span,
+            forecast_override_exponent=forecast_override_exponent,
+            surplus_late_relief_ratio=surplus_late_relief_ratio,
+            forecast_late_relief_ratio=forecast_late_relief_ratio,
+            hold_surplus_ratio=hold_surplus_ratio,
+            hold_forecast_ratio=hold_forecast_ratio,
+            collapse_floor_ratio=collapse_floor_ratio,
+        )
+    if available_surplus_w >= load_power_w:
+        return False
+    return should_allow_assisted_run(
+        effective_solar_surplus_w=effective_solar_surplus_w,
+        projected_grid_import_exceeds_limit=projected_grid_import_exceeds_limit,
+        battery_power_state=battery_power_state,
+        forecast_next_hour_kwh=forecast_next_hour_kwh,
+        forecast_wait_threshold_kwh=forecast_wait_threshold_kwh,
+        required_surplus_w=required_surplus_w,
+        assist_priority=assist_priority,
+        forecast_override_ratio_span=forecast_override_ratio_span,
+        forecast_override_exponent=forecast_override_exponent,
+        surplus_late_relief_ratio=surplus_late_relief_ratio,
+        forecast_late_relief_ratio=forecast_late_relief_ratio,
+    )
+
+
 def should_keep_assisted_run(
     *,
     minutes_since_turn_on: float,
@@ -250,18 +352,22 @@ def should_keep_assisted_run(
     forecast_next_hour_kwh: float | None,
     forecast_wait_threshold_kwh: float,
     effective_solar_surplus_w: float,
+    current_effective_solar_surplus_w: float,
     required_surplus_w: float,
     assist_priority: float,
     forecast_override_ratio_span: float,
     forecast_override_exponent: float,
     surplus_late_relief_ratio: float,
     forecast_late_relief_ratio: float,
+    hold_surplus_ratio: float,
+    hold_forecast_ratio: float,
+    collapse_floor_ratio: float,
 ) -> bool:
     """Return whether an active low-assist run should be held a bit longer."""
     if projected_grid_import_exceeds_limit:
         return False
 
-    hold_minutes = max(0.0, configured_min_on_minutes, assisted_hold_minutes)
+    hold_minutes = max(configured_min_on_minutes, assisted_hold_minutes)
     if minutes_since_turn_on >= hold_minutes:
         return False
 
@@ -270,14 +376,32 @@ def should_keep_assisted_run(
         assist_priority,
         late_relief_ratio=surplus_late_relief_ratio,
     )
+    collapse_floor_w = round(
+        max(0.0, effective_required_surplus_w * max(0.0, collapse_floor_ratio)),
+        1,
+    )
+    if current_effective_solar_surplus_w < collapse_floor_w:
+        return False
+
+    hold_required_surplus_w = round(
+        max(0.0, effective_required_surplus_w * max(0.0, hold_surplus_ratio)),
+        1,
+    )
+    if effective_solar_surplus_w < hold_required_surplus_w:
+        return False
+
     assisted_forecast_threshold_kwh = assisted_run_forecast_threshold_kwh(
         forecast_wait_threshold_kwh,
         effective_solar_surplus_w,
-        effective_required_surplus_w,
+        hold_required_surplus_w,
         assist_priority=assist_priority,
         ratio_span=forecast_override_ratio_span,
         exponent=forecast_override_exponent,
         late_relief_ratio=forecast_late_relief_ratio,
+    )
+    assisted_forecast_threshold_kwh = round(
+        max(0.0, assisted_forecast_threshold_kwh * max(0.0, hold_forecast_ratio)),
+        3,
     )
     if forecast_next_hour_kwh is None:
         return assisted_forecast_threshold_kwh <= 0

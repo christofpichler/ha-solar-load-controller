@@ -32,15 +32,42 @@ config_entries = sys.modules.setdefault(
 )
 core = sys.modules.setdefault("homeassistant.core", types.ModuleType("homeassistant.core"))
 const = sys.modules.setdefault("homeassistant.const", types.ModuleType("homeassistant.const"))
+helpers = sys.modules.setdefault(
+    "homeassistant.helpers",
+    types.ModuleType("homeassistant.helpers"),
+)
 helpers_event = sys.modules.setdefault(
     "homeassistant.helpers.event",
     types.ModuleType("homeassistant.helpers.event"),
+)
+helpers_storage = sys.modules.setdefault(
+    "homeassistant.helpers.storage",
+    types.ModuleType("homeassistant.helpers.storage"),
 )
 util = sys.modules.setdefault("homeassistant.util", types.ModuleType("homeassistant.util"))
 dt_module = sys.modules.setdefault(
     "homeassistant.util.dt",
     types.ModuleType("homeassistant.util.dt"),
 )
+
+
+class _FakeStore:
+    """Minimal Store stub: all async operations are no-ops."""
+
+    def __init__(self, _hass, _version, _key) -> None:
+        pass
+
+    async def async_load(self):
+        return None
+
+    async def async_save(self, _data) -> None:
+        pass
+
+    async def async_remove(self) -> None:
+        pass
+
+
+helpers_storage.Store = _FakeStore
 
 
 class _FakeConfigEntry:
@@ -104,8 +131,32 @@ dt_module.utcnow = _utcnow
 dt_module.now = _utcnow
 util.dt = dt_module
 
-from custom_components.solar_load_controller.const import DECISION_AUTOMATION_PAUSED
-from custom_components.solar_load_controller.coordinator import SolarLoadController
+from custom_components.solar_load_controller.const import (
+    BATTERY_MODE_USE,
+    CONF_BATTERY_CAPACITY_KWH,
+    CONF_BATTERY_MODE,
+    CONF_BATTERY_POWER_SENSOR,
+    CONF_BATTERY_SOC_SENSOR,
+    CONF_FORECAST_NEXT_HOUR_SENSOR,
+    CONF_FORECAST_REMAINING_TODAY_SENSOR,
+    CONF_FORECAST_TODAY_SENSOR,
+    CONF_GRID_EXPORT_SENSOR,
+    CONF_GRID_IMPORT_SENSOR,
+    CONF_INVERTER_LIMIT_W,
+    CONF_LOAD_POWER_W,
+    CONF_MIN_DAILY_RUNTIME_MINUTES,
+    CONF_MIN_BATTERY_SOC,
+    CONF_PV_CURRENT_POWER_SENSOR,
+    DECISION_AUTOMATION_PAUSED,
+    DECISION_FORECAST_ASSISTED_RUN,
+    FORECAST_DAY_MODE_HIGH,
+    FORECAST_DAY_MODE_LOW,
+    FORECAST_DAY_MODE_MID,
+)
+from custom_components.solar_load_controller.coordinator import (
+    SolarLoadController,
+    today as coordinator_today,
+)
 from custom_components.solar_load_controller.decision_engine import (
     DecisionInputs,
     evaluate_decision,
@@ -172,6 +223,9 @@ def make_inputs(**overrides: object) -> DecisionInputs:
         projected_grid_import_exceeds_limit=False,
         battery_can_support_forced_runtime=True,
         should_wait_for_forecast=False,
+        mid_mode_assisted_surplus_threshold_w=220.0,
+        mid_mode_solar_surplus_w=0.0,
+        mid_mode_forecast_wait_threshold_kwh=0.3,
         battery_mode="use",
         battery_soc=50.0,
         battery_power_w=0.0,
@@ -186,8 +240,11 @@ def make_inputs(**overrides: object) -> DecisionInputs:
 
 
 class _FakeState:
-    def __init__(self, state: str) -> None:
+    def __init__(self, state: str, attributes: dict[str, object] | None = None) -> None:
         self.state = state
+        self.attributes = attributes or {}
+        self.last_changed = datetime.now(timezone.utc)
+        self.last_updated = self.last_changed
 
 
 class _FakeStates:
@@ -197,8 +254,16 @@ class _FakeStates:
     def get(self, entity_id: str):
         return self._states.get(entity_id)
 
-    def set(self, entity_id: str, state: str) -> None:
-        self._states[entity_id] = _FakeState(state)
+    def set(
+        self,
+        entity_id: str,
+        state: str,
+        unit: str | None = None,
+    ) -> None:
+        attributes = {}
+        if unit is not None:
+            attributes["unit_of_measurement"] = unit
+        self._states[entity_id] = _FakeState(state, attributes)
 
 
 class _FakeServices:
@@ -280,3 +345,302 @@ class CoordinatorApplyTest(unittest.IsolatedAsyncioTestCase):
             [("switch", "turn_off", {"entity_id": "switch.pool"}, False)],
         )
         self.assertEqual(controller._test_decision.reason, DECISION_AUTOMATION_PAUSED)
+
+    def test_export_guard_uses_forecast_headroom_path_on_coordinator(self) -> None:
+        hass = _FakeHassImpl()
+        hass.states.set("switch.pool", "on")
+        hass.states.set("sensor.grid_import", "200", "W")
+        hass.states.set("sensor.grid_export", "0", "W")
+        hass.states.set("sensor.battery_soc", "80", "%")
+        hass.states.set("sensor.battery_power", "0", "W")
+        hass.states.set("sensor.forecast_remaining", "10", "kWh")
+        hass.states.set("sensor.forecast_next_hour", "0.1", "kWh")
+        hass.states.set("sensor.forecast_today", "12", "kWh")
+
+        entry = _FakeConfigEntry()
+        controller = _TestController(hass, entry)
+        controller.config.update(
+            {
+                CONF_GRID_IMPORT_SENSOR: "sensor.grid_import",
+                CONF_GRID_EXPORT_SENSOR: "sensor.grid_export",
+                CONF_BATTERY_SOC_SENSOR: "sensor.battery_soc",
+                CONF_BATTERY_POWER_SENSOR: "sensor.battery_power",
+                CONF_BATTERY_CAPACITY_KWH: 5.0,
+                CONF_FORECAST_REMAINING_TODAY_SENSOR: "sensor.forecast_remaining",
+                CONF_FORECAST_NEXT_HOUR_SENSOR: "sensor.forecast_next_hour",
+                CONF_FORECAST_TODAY_SENSOR: "sensor.forecast_today",
+                CONF_MIN_DAILY_RUNTIME_MINUTES: 0.0,
+            }
+        )
+        controller._daily_forecast_date = coordinator_today()
+        controller._daily_forecast_day_class = FORECAST_DAY_MODE_HIGH
+        controller._daily_forecast_today_kwh = 12.0
+
+        self.assertTrue(controller._export_guard_run_available)
+
+    def test_export_guard_stays_false_when_forecast_headroom_is_too_small(self) -> None:
+        hass = _FakeHassImpl()
+        hass.states.set("switch.pool", "on")
+        hass.states.set("sensor.grid_import", "200", "W")
+        hass.states.set("sensor.grid_export", "0", "W")
+        hass.states.set("sensor.battery_soc", "80", "%")
+        hass.states.set("sensor.battery_power", "0", "W")
+        hass.states.set("sensor.forecast_remaining", "0.5", "kWh")
+        hass.states.set("sensor.forecast_next_hour", "0.1", "kWh")
+        hass.states.set("sensor.forecast_today", "12", "kWh")
+
+        entry = _FakeConfigEntry()
+        controller = _TestController(hass, entry)
+        controller.config.update(
+            {
+                CONF_GRID_IMPORT_SENSOR: "sensor.grid_import",
+                CONF_GRID_EXPORT_SENSOR: "sensor.grid_export",
+                CONF_BATTERY_SOC_SENSOR: "sensor.battery_soc",
+                CONF_BATTERY_POWER_SENSOR: "sensor.battery_power",
+                CONF_BATTERY_CAPACITY_KWH: 5.0,
+                CONF_FORECAST_REMAINING_TODAY_SENSOR: "sensor.forecast_remaining",
+                CONF_FORECAST_NEXT_HOUR_SENSOR: "sensor.forecast_next_hour",
+                CONF_FORECAST_TODAY_SENSOR: "sensor.forecast_today",
+                CONF_MIN_DAILY_RUNTIME_MINUTES: 0.0,
+            }
+        )
+        controller._daily_forecast_date = coordinator_today()
+        controller._daily_forecast_day_class = FORECAST_DAY_MODE_HIGH
+        controller._daily_forecast_today_kwh = 12.0
+
+        self.assertFalse(controller._export_guard_run_available)
+
+    def test_mid_mode_uses_ac_usable_charging_power_for_assist(self) -> None:
+        hass = _FakeHassImpl()
+        hass.states.set("switch.pool", "off")
+        hass.states.set("sensor.grid_import", "0", "W")
+        hass.states.set("sensor.grid_export", "0", "W")
+        hass.states.set("sensor.battery_power", "900", "W")
+        hass.states.set("sensor.pv_power", "1400", "W")
+
+        controller = _TestController(hass, _FakeConfigEntry())
+        controller.config.update(
+            {
+                CONF_GRID_IMPORT_SENSOR: "sensor.grid_import",
+                CONF_GRID_EXPORT_SENSOR: "sensor.grid_export",
+                CONF_BATTERY_POWER_SENSOR: "sensor.battery_power",
+                CONF_PV_CURRENT_POWER_SENSOR: "sensor.pv_power",
+                CONF_INVERTER_LIMIT_W: 1000.0,
+                CONF_LOAD_POWER_W: 400.0,
+            }
+        )
+        controller._daily_forecast_date = coordinator_today()
+        controller._daily_forecast_day_class = FORECAST_DAY_MODE_MID
+
+        self.assertEqual(controller.available_surplus_w, 0.0)
+        self.assertEqual(controller.mid_mode_solar_surplus_w, 500.0)
+        self.assertTrue(controller._mid_forecast_assisted_run_available)
+
+    def test_battery_force_rejects_soc_at_minimum_boundary(self) -> None:
+        from unittest.mock import PropertyMock, patch
+
+        hass = _FakeHassImpl()
+        hass.states.set("sensor.battery_soc", "10", "%")
+        controller = _TestController(hass, _FakeConfigEntry())
+        controller.config.update(
+            {
+                CONF_BATTERY_MODE: BATTERY_MODE_USE,
+                CONF_BATTERY_SOC_SENSOR: "sensor.battery_soc",
+                CONF_MIN_BATTERY_SOC: 10,
+            }
+        )
+
+        with patch.object(
+            type(controller),
+            "_projected_grid_import_exceeds_limit",
+            new_callable=PropertyMock,
+        ) as mock_exceeds_limit:
+            mock_exceeds_limit.return_value = True
+            self.assertFalse(controller._battery_can_support_forced_runtime(60.0))
+
+    def test_energy_sensor_logs_unavailable_state(self) -> None:
+        hass = _FakeHassImpl()
+        hass.states.set("sensor.forecast_remaining", "unavailable", "kWh")
+        controller = _TestController(hass, _FakeConfigEntry())
+
+        with self.assertLogs(
+            "custom_components.solar_load_controller.coordinator",
+            level="DEBUG",
+        ) as captured:
+            result = controller._energy_sensor_kwh("sensor.forecast_remaining")
+
+        self.assertIsNone(result)
+        self.assertIn("Energy sensor 'sensor.forecast_remaining' is unavailable", captured.output[0])
+
+    def test_positive_sensor_logs_unknown_state(self) -> None:
+        hass = _FakeHassImpl()
+        hass.states.set("sensor.battery_soc", "unknown", "%")
+        controller = _TestController(hass, _FakeConfigEntry())
+
+        with self.assertLogs(
+            "custom_components.solar_load_controller.coordinator",
+            level="DEBUG",
+        ) as captured:
+            result = controller._positive_state_value("sensor.battery_soc")
+
+        self.assertIsNone(result)
+        self.assertIn("Numeric sensor 'sensor.battery_soc' is unknown", captured.output[0])
+
+    def test_decision_log_record_includes_debug_input_states(self) -> None:
+        hass = _FakeHassImpl()
+        hass.states.set("switch.pool", "off")
+        hass.states.set("sensor.grid_import", "100", "W")
+        controller = _TestController(hass, _FakeConfigEntry())
+        controller.config[CONF_GRID_IMPORT_SENSOR] = "sensor.grid_import"
+
+        record = controller._decision_log_record(controller.decision)
+
+        self.assertEqual(
+            record["states"]["grid_import_sensor"]["entity_id"],
+            "sensor.grid_import",
+        )
+        self.assertEqual(record["states"]["grid_import_sensor"]["state"], "100")
+
+
+class MidModeHoldTest(unittest.TestCase):
+    """Exercise the mid-mode hold window and battery_priority guard."""
+
+    def _make_controller(self, load_on: bool = False) -> _TestController:
+        hass = _FakeHassImpl()
+        hass.states.set("switch.pool", "on" if load_on else "off")
+        controller = _TestController(hass, _FakeConfigEntry())
+        controller._daily_forecast_date = coordinator_today()
+        controller._daily_forecast_day_class = FORECAST_DAY_MODE_MID
+        controller._daily_forecast_today_kwh = 3.0
+        return controller
+
+    def test_hold_window_keeps_run_available_when_solar_collapses(self) -> None:
+        """After a forecast_run start, hold window should return True even with zero surplus."""
+        from datetime import timedelta
+        from unittest.mock import patch, PropertyMock
+
+        controller = self._make_controller(load_on=True)
+        # Simulate load just turned on via forecast_run
+        controller._tracker._active_runtime_reason = DECISION_FORECAST_ASSISTED_RUN
+        controller._last_turned_on_at = datetime.now(timezone.utc) - timedelta(minutes=2)
+        # Solar has collapsed
+        controller.config.update({"load_power_w": 400.0})
+
+        # Within hold window (2 min < 5 min) and no grid import limit exceeded
+        with patch.object(
+            type(controller), "mid_mode_solar_surplus_w", new_callable=PropertyMock
+        ) as mock_solar, patch.object(
+            type(controller), "_projected_grid_import_exceeds_limit", new_callable=PropertyMock
+        ) as mock_grid, patch.object(
+            type(controller), "available_surplus_w", new_callable=PropertyMock
+        ) as mock_surplus, patch.object(
+            type(controller), "runtime_remaining_today_minutes", new_callable=PropertyMock
+        ) as mock_rem:
+            mock_solar.return_value = 0.0
+            mock_grid.return_value = False
+            mock_surplus.return_value = 0.0
+            mock_rem.return_value = 60.0
+            self.assertTrue(controller._mid_forecast_assisted_run_available)
+
+    def test_hold_window_releases_when_grid_import_exceeds_limit(self) -> None:
+        """Grid import protection must override the hold window immediately."""
+        from datetime import timedelta
+        from unittest.mock import patch, PropertyMock
+
+        controller = self._make_controller(load_on=True)
+        controller._tracker._active_runtime_reason = DECISION_FORECAST_ASSISTED_RUN
+        controller._last_turned_on_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+        controller.config.update({"load_power_w": 400.0})
+
+        with patch.object(
+            type(controller), "mid_mode_solar_surplus_w", new_callable=PropertyMock
+        ) as mock_solar, patch.object(
+            type(controller), "_projected_grid_import_exceeds_limit", new_callable=PropertyMock
+        ) as mock_grid, patch.object(
+            type(controller), "available_surplus_w", new_callable=PropertyMock
+        ) as mock_surplus, patch.object(
+            type(controller), "runtime_remaining_today_minutes", new_callable=PropertyMock
+        ) as mock_rem:
+            mock_solar.return_value = 0.0
+            mock_grid.return_value = True   # grid import exceeded
+            mock_surplus.return_value = 0.0
+            mock_rem.return_value = 60.0
+            self.assertFalse(controller._mid_forecast_assisted_run_available)
+
+    def test_hold_window_expires_after_hold_minutes(self) -> None:
+        """After the hold window expires, normal threshold logic applies."""
+        from datetime import timedelta
+        from unittest.mock import patch, PropertyMock
+        from custom_components.solar_load_controller.mid_mode import (
+            MID_FORECAST_ASSISTED_HOLD_MINUTES,
+        )
+
+        controller = self._make_controller(load_on=True)
+        controller._tracker._active_runtime_reason = DECISION_FORECAST_ASSISTED_RUN
+        # Started more than hold_minutes ago
+        controller._last_turned_on_at = datetime.now(timezone.utc) - timedelta(
+            minutes=MID_FORECAST_ASSISTED_HOLD_MINUTES + 1
+        )
+        controller.config.update({"load_power_w": 400.0})
+
+        with patch.object(
+            type(controller), "mid_mode_solar_surplus_w", new_callable=PropertyMock
+        ) as mock_solar, patch.object(
+            type(controller), "_projected_grid_import_exceeds_limit", new_callable=PropertyMock
+        ) as mock_grid, patch.object(
+            type(controller), "available_surplus_w", new_callable=PropertyMock
+        ) as mock_surplus, patch.object(
+            type(controller), "runtime_remaining_today_minutes", new_callable=PropertyMock
+        ) as mock_rem, patch.object(
+            type(controller), "battery_power_state", new_callable=PropertyMock
+        ) as mock_batt:
+            mock_solar.return_value = 0.0   # solar still zero
+            mock_grid.return_value = False
+            mock_surplus.return_value = 0.0
+            mock_rem.return_value = 60.0
+            mock_batt.return_value = "neutral"
+            # Hold expired → normal check → surplus=0 < threshold → False
+            self.assertFalse(controller._mid_forecast_assisted_run_available)
+
+    def test_battery_priority_does_not_apply_on_mid_day(self) -> None:
+        """battery_priority_after_runtime must return False on mid days."""
+        from unittest.mock import patch, PropertyMock
+
+        controller = self._make_controller()
+
+        with patch.object(
+            type(controller), "runtime_remaining_today_minutes", new_callable=PropertyMock
+        ) as mock_rem:
+            mock_rem.return_value = 0.0
+            self.assertFalse(controller._should_prioritize_battery_after_runtime())
+
+    def test_battery_priority_does_not_apply_on_low_day(self) -> None:
+        """battery_priority_after_runtime must return False on low days."""
+        from unittest.mock import patch, PropertyMock
+
+        controller = self._make_controller()
+        controller._daily_forecast_day_class = FORECAST_DAY_MODE_LOW
+
+        with patch.object(
+            type(controller), "runtime_remaining_today_minutes", new_callable=PropertyMock
+        ) as mock_rem:
+            mock_rem.return_value = 0.0
+            self.assertFalse(controller._should_prioritize_battery_after_runtime())
+
+    def test_battery_priority_can_apply_on_high_day(self) -> None:
+        """battery_priority_after_runtime is still evaluated on high days."""
+        from unittest.mock import patch, PropertyMock
+
+        controller = self._make_controller()
+        controller._daily_forecast_day_class = FORECAST_DAY_MODE_HIGH
+
+        with patch.object(
+            type(controller), "runtime_remaining_today_minutes", new_callable=PropertyMock
+        ) as mock_rem, patch.object(
+            type(controller), "battery_soc", new_callable=PropertyMock
+        ) as mock_soc:
+            mock_rem.return_value = 0.0
+            mock_soc.return_value = None   # forces charging-state branch
+            # Does not raise and reaches actual high-mode logic
+            result = controller._should_prioritize_battery_after_runtime()
+            self.assertIsInstance(result, bool)

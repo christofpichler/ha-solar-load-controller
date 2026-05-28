@@ -95,6 +95,9 @@ class DecisionInputs:
     projected_grid_import_exceeds_limit: bool
     battery_can_support_forced_runtime: bool
     should_wait_for_forecast: bool
+    mid_mode_assisted_surplus_threshold_w: float
+    mid_mode_solar_surplus_w: float
+    mid_mode_forecast_wait_threshold_kwh: float
     battery_mode: str
     battery_soc: float | None
     battery_power_w: float | None
@@ -192,6 +195,9 @@ def evaluate_decision(inputs: DecisionInputs) -> DecisionResult:
         if inputs.forecast_day_class == "low":
             reason = DECISION_LOW_FORECAST_ASSISTED_RUN
         else:
+            # forecast_run is currently the mid-mode assisted-run reason. The
+            # coordinator is responsible for only setting this flag for modes
+            # that intentionally use the shared forecast-assisted decision.
             reason = DECISION_FORECAST_ASSISTED_RUN
     elif inputs.must_force_minimum_runtime:
         if (
@@ -233,14 +239,33 @@ def evaluate_decision(inputs: DecisionInputs) -> DecisionResult:
 
 
 def _build_checks(inputs: DecisionInputs) -> tuple[DecisionCheck, ...]:
-    """Return decision checks in the same order as the decision tree."""
+    """Return decision checks in the same order as the decision tree.
+
+    Order mirrors evaluate_decision exactly:
+    1. automation_paused
+    2. required_grid_sensors
+    3. time_window
+    4. minimum_on_time          (only relevant while load is on)
+    5. high_forecast_no_grid_import
+    6. running_grid_import_limit
+    7. minimum_off_time
+    8. grid_import_cooldown
+    9. export_guard
+    10. battery_priority_after_runtime
+    11. runtime_remaining
+    12. solar_surplus
+    13. forecast_assisted_run
+    14. must_force_runtime  (+ sub-checks grid/battery override)
+    15. wait_for_forecast
+    """
     return (
         DecisionCheck("automation_paused", not inputs.automation_paused),
-        DecisionCheck("time_window", inputs.inside_time_window),
         DecisionCheck(
             "required_grid_sensors",
             not inputs.missing_required_grid_sensor_value,
         ),
+        DecisionCheck("time_window", inputs.inside_time_window),
+        DecisionCheck("minimum_on_time", inputs.min_on_active),
         DecisionCheck(
             "high_forecast_no_grid_import",
             not (
@@ -268,20 +293,19 @@ def _build_checks(inputs: DecisionInputs) -> tuple[DecisionCheck, ...]:
             not inputs.grid_import_cooldown_active
             or _minimum_runtime_overrides_grid(inputs),
         ),
-        DecisionCheck("runtime_remaining", inputs.runtime_remaining_minutes > 0),
-        DecisionCheck(
-            "battery_priority_after_runtime",
-            not inputs.battery_priority_after_runtime,
-        ),
         DecisionCheck(
             "export_guard",
             inputs.export_guard_run_available,
         ),
         DecisionCheck(
+            "battery_priority_after_runtime",
+            not inputs.battery_priority_after_runtime,
+        ),
+        DecisionCheck("runtime_remaining", inputs.runtime_remaining_minutes > 0),
+        DecisionCheck(
             "solar_surplus",
             inputs.effective_solar_surplus_w >= inputs.load_power_w,
         ),
-        DecisionCheck("minimum_on_time", inputs.min_on_active),
         DecisionCheck(
             "forecast_assisted_run",
             inputs.forecast_assisted_run_available,
@@ -337,7 +361,7 @@ def _build_summary(inputs: DecisionInputs, should_run: bool, reason: str) -> str
     if reason == DECISION_SOLAR_SURPLUS_AVAILABLE:
         return "solar: surplus covers load"
     if reason == DECISION_FORECAST_ASSISTED_RUN:
-        return "forecast_run: high forecast with partial surplus"
+        return "forecast_run: mid forecast with AC-usable solar support"
     if reason == DECISION_LOW_FORECAST_ASSISTED_RUN:
         return "low_assist: partial solar with forecast support"
     if reason == DECISION_FORECAST_WAIT:
@@ -352,8 +376,9 @@ def _build_summary(inputs: DecisionInputs, should_run: bool, reason: str) -> str
         return "paused: automatic control is paused"
     if reason == DECISION_MISSING_REQUIRED_SENSOR:
         return "missing_sensor: required input unavailable"
-    action = "run" if should_run else "wait"
-    return f"{action}: waiting for better conditions"
+    if should_run:
+        return "run: active"
+    return "wait: waiting for better conditions"
 
 
 def _minimum_runtime_overrides_grid(inputs: DecisionInputs) -> bool:

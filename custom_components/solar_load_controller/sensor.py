@@ -37,6 +37,7 @@ from .const import (
     FORECAST_DAY_MODE_AUTO,
     FORECAST_DAY_MODE_HIGH,
     FORECAST_DAY_MODE_LOW,
+    FORECAST_DAY_MODE_MID,
 )
 from .coordinator import SolarLoadController, today
 
@@ -63,6 +64,7 @@ DECISION_REASON_OPTIONS = [
 FORECAST_DAY_MODE_SENSOR_OPTIONS = [
     FORECAST_DAY_MODE_AUTO,
     FORECAST_DAY_MODE_LOW,
+    FORECAST_DAY_MODE_MID,
     FORECAST_DAY_MODE_HIGH,
     "unknown",
 ]

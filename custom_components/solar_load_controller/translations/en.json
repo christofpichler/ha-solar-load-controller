@@ -1,6 +1,9 @@
 {
   "title": "Solar Load Controller",
   "config": {
+    "error": {
+      "low_threshold_too_high": "Mid mode threshold must be lower than the High mode threshold."
+    },
     "step": {
       "user": {
         "title": "1/6 Load",
@@ -64,9 +67,10 @@
       },
       "modes": {
         "title": "5/6 Modes",
-        "description": "Mode behavior lives here. Low and High already have dedicated settings. Mid mode will be added on this page once it is introduced.",
+        "description": "Mode behavior lives here. Low, Mid, and High each have dedicated settings.",
         "data": {
           "grid_import_limit_w": "Grid limit in Low mode",
+          "forecast_low_threshold_kwh_per_kwp": "Mid mode from (kWh/kWp)",
           "forecast_high_threshold_kwh_per_kwp": "High mode from (kWh/kWp)",
           "high_mode_base_household_load_w": "High-mode household base load",
           "high_mode_household_reserve_margin_percent": "High-mode household reserve margin",
@@ -75,7 +79,8 @@
         },
         "data_description": {
           "grid_import_limit_w": "Maximum grid import allowed in Low mode before the load is blocked or stopped. High mode uses a much stricter import rule.",
-          "forecast_high_threshold_kwh_per_kwp": "If today's forecast per kWp reaches this value, the day is treated as High mode. Mid mode will later sit between Low and High.",
+          "forecast_low_threshold_kwh_per_kwp": "If today's forecast per kWp reaches this value, the day is treated as Mid mode. Days below this threshold are Low mode.",
+          "forecast_high_threshold_kwh_per_kwp": "If today's forecast per kWp reaches this value, the day is treated as High mode. Mid mode sits between Low and High.",
           "high_mode_base_household_load_w": "Used only after the daily minimum runtime is already reached on High days. This is the expected ongoing household base load that should still be reserved from the remaining forecast before optional load runtime is allowed.",
           "high_mode_household_reserve_margin_percent": "Extra safety margin added on top of the household base load to cover variable late-day loads.",
           "min_runtime_battery_override": "If enabled, Low mode may still run the load to reach the daily minimum runtime even when normal battery protection would otherwise block forced runtime.",
@@ -95,6 +100,9 @@
     }
   },
   "options": {
+    "error": {
+      "low_threshold_too_high": "Mid mode threshold must be lower than the High mode threshold."
+    },
     "step": {
       "init": {
         "title": "Options: 1/6 Load",
@@ -158,9 +166,10 @@
       },
       "modes": {
         "title": "Options: 5/6 Modes",
-        "description": "Mode behavior lives here. Low and High already have dedicated settings. Mid mode will be added on this page once it is introduced.",
+        "description": "Mode behavior lives here. Low, Mid, and High each have dedicated settings.",
         "data": {
           "grid_import_limit_w": "Grid limit in Low mode",
+          "forecast_low_threshold_kwh_per_kwp": "Mid mode from (kWh/kWp)",
           "forecast_high_threshold_kwh_per_kwp": "High mode from (kWh/kWp)",
           "high_mode_base_household_load_w": "High-mode household base load",
           "high_mode_household_reserve_margin_percent": "High-mode household reserve margin",
@@ -169,7 +178,8 @@
         },
         "data_description": {
           "grid_import_limit_w": "Maximum grid import allowed in Low mode before the load is blocked or stopped. High mode uses a much stricter import rule.",
-          "forecast_high_threshold_kwh_per_kwp": "If today's forecast per kWp reaches this value, the day is treated as High mode. Mid mode will later sit between Low and High.",
+          "forecast_low_threshold_kwh_per_kwp": "If today's forecast per kWp reaches this value, the day is treated as Mid mode. Days below this threshold are Low mode.",
+          "forecast_high_threshold_kwh_per_kwp": "If today's forecast per kWp reaches this value, the day is treated as High mode. Mid mode sits between Low and High.",
           "high_mode_base_household_load_w": "Used only after the daily minimum runtime is already reached on High days. This is the expected ongoing household base load that should still be reserved from the remaining forecast before optional load runtime is allowed.",
           "high_mode_household_reserve_margin_percent": "Extra safety margin added on top of the household base load to cover variable late-day loads.",
           "min_runtime_battery_override": "If enabled, Low mode may still run the load to reach the daily minimum runtime even when normal battery protection would otherwise block forced runtime.",
@@ -205,6 +215,7 @@
       "options": {
         "auto": "Auto",
         "low": "Low",
+        "mid": "Mid",
         "high": "High"
       }
     }
@@ -253,6 +264,7 @@
         "state": {
           "auto": "Auto",
           "low": "Low",
+          "mid": "Mid",
           "high": "High",
           "unknown": "Unknown"
         }
@@ -271,8 +283,8 @@
       }
     },
     "switch": {
-      "automation_paused": {
-        "name": "Automation Paused"
+      "automation_enabled": {
+        "name": "Automation Enabled"
       }
     },
     "select": {
