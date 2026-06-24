@@ -1,6 +1,6 @@
 # Solar Load Controller
 
-[![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
+[![HACS Default](https://img.shields.io/badge/HACS-Default-blue.svg)](https://github.com/custom-components/hacs)
 [![Tests](https://github.com/christofpichler/ha-solar-load-controller/actions/workflows/tests.yml/badge.svg)](https://github.com/christofpichler/ha-solar-load-controller/actions/workflows/tests.yml)
 
 <img src="assets/icon.svg" alt="Solar Load Controller icon" width="96">
