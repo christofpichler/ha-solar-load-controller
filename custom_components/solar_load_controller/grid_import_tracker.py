@@ -14,6 +14,29 @@ from .const import (
 from .high_mode import no_grid_import_tolerance_w
 from .sensor_reader import as_float
 
+# Absolute floor for the safety margin subtracted from the import limit before
+# the load is started. Kept at the historical value so small installations see
+# no behaviour change.
+GRID_IMPORT_START_MARGIN_W: float = 50.0
+
+# The margin also scales with load power. It exists to absorb the uncertainty in
+# the projected import, and that uncertainty grows with the size of the load
+# being switched on: 50 W is a sensible buffer ahead of a 400 W load but not
+# ahead of a 3 kW one. The floor wins below a 1 kW load.
+GRID_IMPORT_START_MARGIN_RATIO: float = 0.05
+
+
+def start_margin_w(
+    load_power_w: float,
+    *,
+    floor_w: float = GRID_IMPORT_START_MARGIN_W,
+    ratio: float = GRID_IMPORT_START_MARGIN_RATIO,
+) -> float:
+    """Return the safety margin applied to the import limit before a start."""
+    if load_power_w <= 0:
+        return floor_w
+    return round(max(floor_w, load_power_w * ratio), 1)
+
 
 class GridImportTracker:
     """Track sustained import excess and restart cooldown state."""

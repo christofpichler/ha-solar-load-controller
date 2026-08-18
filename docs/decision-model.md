@@ -155,6 +155,37 @@ The floor wins below a 500 W load, so small installations keep their previous
 behaviour. Larger loads get a tolerance in proportion to their own regulation
 noise instead of an absolute value that is effectively zero for them.
 
+The margin subtracted from the import limit before a start
+(`grid_import_start_limit_w`) scales the same way, as
+`max(50 W, 5% of load power)`. It absorbs the uncertainty in the projected
+import, and that uncertainty grows with the size of the load being switched on.
+
+### Sensor availability grace period
+
+Cloud-backed sensors (inverter and forecast vendors) drop to `unavailable` for a
+single update cycle regularly. Treating every blip as a missing sensor stops the
+load and then costs a full `min_off` window before it can come back.
+
+`SensorReader` therefore remembers the last good reading per entity and reuses it
+while the sensor reports `unknown`/`unavailable`, for up to
+`SENSOR_UNAVAILABLE_GRACE_SECONDS` (180 s). Beyond that the value is dropped and
+the decision reaches `missing_sensor` as before, so a genuinely dead sensor still
+stops the load. An entity that disappears entirely is never bridged — that is a
+configuration change, not a dropout.
+
+### Export-guard PV thresholds
+
+The forecast-headroom branch uses two thresholds, not one:
+
+| State | Required PV |
+|---|---|
+| Load off (start) | `load_power_w * HIGH_FORECAST_EXPORT_GUARD_MIN_PV_RATIO` (100%) |
+| Load on (keep running) | `load_power_w * HIGH_FORECAST_EXPORT_GUARD_KEEP_PV_RATIO` (80%) |
+
+A single threshold would make the start condition double as the stop condition,
+so PV hovering around the load power would toggle the branch on every update.
+Installations without a PV power sensor are unaffected by both.
+
 ## Decision Reasons
 
 The current short decision reasons are:
@@ -198,6 +229,16 @@ After minimum runtime is met:
 - expected household consumption is reserved
 - a late-day time-priority buffer is added
 - restart decisions become stricter
+
+The daily runtime target is a **floor, not a cap**. Reaching it does not stop
+the load: on a strong forecast day the export guard keeps running it from
+surplus that would otherwise be exported or curtailed, so daily runtime can end
+up well above the configured target. That is intended. What eventually stops the
+load is the end of the time window, grid import, or battery priority — the
+`runtime_met` reason only applies when nothing else justifies continuing.
+
+If a ceiling is wanted, that is a separate feature; there is deliberately none
+today.
 
 ### Key helpers
 

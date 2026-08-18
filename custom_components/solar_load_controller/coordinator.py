@@ -59,7 +59,11 @@ from .forecast_tracker import (
     ForecastTrackerMixin,
     ForecastTracker,
 )
-from .grid_import_tracker import GridImportMixin, GridImportTracker
+from .grid_import_tracker import (
+    GridImportMixin,
+    GridImportTracker,
+    start_margin_w,
+)
 from .load_controller import LoadControlMixin, LoadControlState
 from .persisted_state import (
     PersistedControllerState,
@@ -115,7 +119,6 @@ _LOGGER = logging.getLogger(__name__)
 # future use but currently has no practical effect on restart behavior.
 GRID_IMPORT_RESTART_COOLDOWN = timedelta(seconds=0)
 GRID_IMPORT_SHUTDOWN_DELAY = timedelta(seconds=15)
-GRID_IMPORT_START_MARGIN_W = 50
 BATTERY_CHARGING_EFFICIENCY = 0.9
 PENDING_LOAD_STATE_TIMEOUT = timedelta(seconds=30)
 # Storage schema version for the persistent runtime-latch state.
@@ -400,7 +403,7 @@ class SolarLoadController(
     @property
     def grid_import_start_margin_w(self) -> float:
         """Return margin subtracted from the import limit before starts."""
-        return GRID_IMPORT_START_MARGIN_W
+        return start_margin_w(self.load_power_w)
 
     @property
     def grid_import_restart_cooldown(self) -> timedelta:

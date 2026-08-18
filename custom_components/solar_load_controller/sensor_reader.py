@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Any
+
+from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_FORECAST_NEXT_HOUR_SENSOR,
@@ -15,6 +18,14 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger("custom_components.solar_load_controller.coordinator")
+
+# How long a sensor may report "unavailable"/"unknown" before its last known
+# value stops being used. Cloud-backed sensors (inverter and forecast vendors)
+# drop out for a single update cycle regularly; treating every blip as a missing
+# sensor stops the load and then costs a full min_off window before it can come
+# back. Only brief gaps are bridged — a genuinely dead sensor still surfaces as
+# missing once the window expires.
+SENSOR_UNAVAILABLE_GRACE_SECONDS: float = 180.0
 
 
 def as_float(value: Any, default: float | None = None) -> float | None:
@@ -31,6 +42,65 @@ class SensorReader:
     def __init__(self, hass, config: dict[str, Any]) -> None:
         self.hass = hass
         self.config = config
+        self._last_known: dict[str, tuple[float, datetime]] = {}
+
+    def _remember(self, entity_id: str, value: float) -> float:
+        """Record a good reading so a later blip can be bridged."""
+        self._last_known[entity_id] = (value, dt_util.utcnow())
+        return value
+
+    def _bridge_unavailable(
+        self,
+        entity_id: str,
+        label: str,
+        *,
+        grace_seconds: float = SENSOR_UNAVAILABLE_GRACE_SECONDS,
+    ) -> float | None:
+        """Return the last known value while a sensor is briefly unavailable.
+
+        Returns None when the sensor was never readable or the gap has grown
+        past the grace window, so a real outage still reaches the missing-sensor
+        decision path.
+        """
+        state = self.hass.states.get(entity_id)
+        if state is None or str(state.state).lower() not in {
+            "unknown",
+            "unavailable",
+        }:
+            return None
+
+        remembered = self._last_known.get(entity_id)
+        if remembered is None:
+            _LOGGER.debug(
+                "%s '%s' is %s and has no previous value; treating as unavailable",
+                label,
+                entity_id,
+                state.state,
+            )
+            return None
+
+        value, seen_at = remembered
+        age = (dt_util.utcnow() - seen_at).total_seconds()
+        if age > grace_seconds:
+            _LOGGER.debug(
+                "%s '%s' is %s and its last value is %.0f s old; "
+                "treating as unavailable",
+                label,
+                entity_id,
+                state.state,
+                age,
+            )
+            return None
+
+        _LOGGER.debug(
+            "%s '%s' is %s; bridging with last known value %s (%.0f s old)",
+            label,
+            entity_id,
+            state.state,
+            value,
+            age,
+        )
+        return value
 
     def state_as_float(self, entity_id: str | None) -> float | None:
         """Return a state value as float, if possible."""
@@ -57,17 +127,11 @@ class SensorReader:
             return None
         value = self.state_as_float(entity_id)
         if value is None:
-            state = self.hass.states.get(entity_id)
-            if state is not None and str(state.state).lower() in {
-                "unknown",
-                "unavailable",
-            }:
-                _LOGGER.debug(
-                    "Numeric sensor '%s' is %s; treating value as unavailable",
-                    entity_id,
-                    state.state,
-                )
-            return None
+            value = self._bridge_unavailable(entity_id, "Numeric sensor")
+            if value is None:
+                return None
+        else:
+            self._remember(entity_id, value)
         return max(0.0, value)
 
     def energy_sensor_kwh(self, entity_id: str | None) -> float | None:
@@ -76,17 +140,11 @@ class SensorReader:
             return None
         value = self.state_as_float(entity_id)
         if value is None:
-            state = self.hass.states.get(entity_id)
-            if state is not None and str(state.state).lower() in {
-                "unknown",
-                "unavailable",
-            }:
-                _LOGGER.debug(
-                    "Energy sensor '%s' is %s; treating value as unavailable",
-                    entity_id,
-                    state.state,
-                )
-            return None
+            value = self._bridge_unavailable(entity_id, "Energy sensor")
+            if value is None:
+                return None
+        else:
+            self._remember(entity_id, value)
 
         unit = (self.state_unit(entity_id) or "").lower()
         if unit in {"wh", "w h"}:
