@@ -251,6 +251,82 @@ class DecisionEngineTest(unittest.TestCase):
         self.assertTrue(result.should_run)
         self.assertEqual(result.reason, DECISION_MINIMUM_ON_TIME_ACTIVE)
 
+    def test_hard_grid_limit_beats_min_on(self) -> None:
+        """The configured import ceiling must not be ridden out by min_on.
+
+        Regression for the long-term flapping analysis: while min_on outranked
+        the hard limit, keeping grid protection sharp required configuring a
+        min_on so short that it no longer damped anything.
+        """
+        result = evaluate_decision(
+            make_inputs(
+                is_load_on=True,
+                min_on_active=True,
+                grid_import_w=4567.0,
+                grid_import_limit_w=1000.0,
+                grid_import_shutdown_allowed=True,
+                export_guard_run_available=True,
+            )
+        )
+
+        self.assertFalse(result.should_run)
+        self.assertEqual(result.reason, DECISION_GRID_IMPORT_LIMIT_EXCEEDED)
+
+    def test_min_on_still_rides_out_import_below_hard_limit(self) -> None:
+        """Import above the soft tolerance but below the ceiling stays damped."""
+        result = evaluate_decision(
+            make_inputs(
+                is_load_on=True,
+                min_on_active=True,
+                high_forecast_grid_import_active=True,
+                grid_import_w=885.0,
+                grid_import_limit_w=1000.0,
+                grid_import_shutdown_allowed=True,
+                export_guard_run_available=True,
+            )
+        )
+
+        self.assertTrue(result.should_run)
+        self.assertEqual(result.reason, DECISION_MINIMUM_ON_TIME_ACTIVE)
+
+    def test_min_on_still_beats_solar_side_stop_reasons(self) -> None:
+        """min_on must keep damping every non-grid stop reason."""
+        for label, overrides in (
+            ("battery_priority", {"battery_priority_after_runtime": True}),
+            ("runtime_met", {"runtime_remaining_minutes": 0.0}),
+            ("forecast_wait", {"should_wait_for_forecast": True}),
+        ):
+            with self.subTest(stop_reason=label):
+                result = evaluate_decision(
+                    make_inputs(
+                        is_load_on=True,
+                        min_on_active=True,
+                        available_surplus_w=0.0,
+                        **overrides,
+                    )
+                )
+
+                self.assertTrue(result.should_run)
+                self.assertEqual(result.reason, DECISION_MINIMUM_ON_TIME_ACTIVE)
+
+    def test_check_order_mirrors_decision_tree(self) -> None:
+        """_build_checks must stay in lockstep with evaluate_decision."""
+        result = evaluate_decision(make_inputs())
+        names = [check.name for check in result.checks]
+
+        self.assertEqual(
+            names[:7],
+            [
+                "automation_paused",
+                "required_grid_sensors",
+                "time_window",
+                "running_grid_import_limit",
+                "minimum_on_time",
+                "high_forecast_no_grid_import",
+                "minimum_off_time",
+            ],
+        )
+
     def test_grid_limit_blocks_forced_runtime_without_override(self) -> None:
         """Grid limit should block forced runtime when override is disabled."""
         result = evaluate_decision(

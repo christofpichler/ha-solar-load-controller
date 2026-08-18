@@ -102,6 +102,59 @@ That means:
 This prevents mode flapping when forecast services revise totals during the
 day.
 
+## Decision Precedence
+
+The decision tree is evaluated top to bottom; the first matching branch wins.
+Two ordering rules are deliberate and easy to get wrong:
+
+1. **The configured `grid_import_limit_w` is a hard ceiling and outranks
+   `min_on`.** A running load is stopped as soon as sustained import exceeds the
+   limit, even inside the minimum on-time. Without this an installation can only
+   keep grid protection sharp by configuring a `min_on` so short that it no
+   longer damps anything.
+2. **`min_on` outranks the soft high-mode tolerance**
+   (`HIGH_FORECAST_NO_GRID_TOLERANCE_W`, 25 W). Import between the tolerance and
+   the configured limit is ridden out for the remainder of the minimum on-time —
+   that brief spike is exactly the rapid off/on switching `min_on` exists to
+   prevent.
+
+Resulting order of the first branches:
+
+```
+1. automation_paused
+2. required_grid_sensors
+3. time_window
+4. running_grid_import_limit     (hard ceiling)
+5. minimum_on_time
+6. high_forecast_no_grid_import  (soft tolerance)
+7. minimum_off_time
+...
+```
+
+`_build_checks()` in `decision_engine.py` mirrors this order exactly and is
+covered by a regression test.
+
+### Grid-import tolerance scaling
+
+The soft high-mode tolerance is not a fixed watt value. It is derived from the
+configured load power:
+
+```
+tolerance_w = max(HIGH_FORECAST_NO_GRID_TOLERANCE_W,          # 25 W floor
+                  load_power_w * HIGH_FORECAST_NO_GRID_TOLERANCE_RATIO)  # 5 %
+```
+
+| Load power | Tolerance |
+|---|---|
+| 400 W | 25 W |
+| 800 W | 40 W |
+| 1500 W | 75 W |
+| 3000 W | 150 W |
+
+The floor wins below a 500 W load, so small installations keep their previous
+behaviour. Larger loads get a tolerance in proportion to their own regulation
+noise instead of an absolute value that is effectively zero for them.
+
 ## Decision Reasons
 
 The current short decision reasons are:

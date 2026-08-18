@@ -148,21 +148,28 @@ def evaluate_decision(inputs: DecisionInputs) -> DecisionResult:
     elif not inputs.inside_time_window:
         should_run = False
         reason = DECISION_TIME_WINDOW_BLOCKED
-    elif inputs.is_load_on and inputs.min_on_active:
-        should_run = True
-        reason = DECISION_MINIMUM_ON_TIME_ACTIVE
-    elif (
-        inputs.is_load_on
-        and inputs.high_forecast_grid_import_active
-    ):
-        should_run = False
-        reason = DECISION_GRID_IMPORT_LIMIT_EXCEEDED
     elif (
         inputs.is_load_on
         and inputs.grid_import_w is not None
         and inputs.grid_import_w > inputs.grid_import_limit_w
         and inputs.grid_import_shutdown_allowed
         and not _minimum_runtime_overrides_grid(inputs)
+    ):
+        # The configured import limit is a hard ceiling and is deliberately
+        # evaluated *before* the minimum on-time. Letting min_on ride out a
+        # breach of the user's own limit is what forces installations to
+        # configure a min_on so short that it stops damping anything.
+        should_run = False
+        reason = DECISION_GRID_IMPORT_LIMIT_EXCEEDED
+    elif inputs.is_load_on and inputs.min_on_active:
+        # Still evaluated before the soft high-forecast tolerance: riding out a
+        # brief import spike below the configured limit is exactly the rapid
+        # off/on switching the minimum on-time exists to prevent.
+        should_run = True
+        reason = DECISION_MINIMUM_ON_TIME_ACTIVE
+    elif (
+        inputs.is_load_on
+        and inputs.high_forecast_grid_import_active
     ):
         should_run = False
         reason = DECISION_GRID_IMPORT_LIMIT_EXCEEDED
@@ -245,9 +252,9 @@ def _build_checks(inputs: DecisionInputs) -> tuple[DecisionCheck, ...]:
     1. automation_paused
     2. required_grid_sensors
     3. time_window
-    4. minimum_on_time          (only relevant while load is on)
-    5. high_forecast_no_grid_import
-    6. running_grid_import_limit
+    4. running_grid_import_limit    (hard ceiling, beats minimum_on_time)
+    5. minimum_on_time              (only relevant while load is on)
+    6. high_forecast_no_grid_import (soft tolerance, damped by minimum_on_time)
     7. minimum_off_time
     8. grid_import_cooldown
     9. export_guard
@@ -265,14 +272,6 @@ def _build_checks(inputs: DecisionInputs) -> tuple[DecisionCheck, ...]:
             not inputs.missing_required_grid_sensor_value,
         ),
         DecisionCheck("time_window", inputs.inside_time_window),
-        DecisionCheck("minimum_on_time", inputs.min_on_active),
-        DecisionCheck(
-            "high_forecast_no_grid_import",
-            not (
-                inputs.is_load_on
-                and inputs.high_forecast_grid_import_active
-            ),
-        ),
         DecisionCheck(
             "running_grid_import_limit",
             not (
@@ -281,6 +280,14 @@ def _build_checks(inputs: DecisionInputs) -> tuple[DecisionCheck, ...]:
                 and inputs.grid_import_w > inputs.grid_import_limit_w
                 and inputs.grid_import_shutdown_allowed
                 and not _minimum_runtime_overrides_grid(inputs)
+            ),
+        ),
+        DecisionCheck("minimum_on_time", inputs.min_on_active),
+        DecisionCheck(
+            "high_forecast_no_grid_import",
+            not (
+                inputs.is_load_on
+                and inputs.high_forecast_grid_import_active
             ),
         ),
         DecisionCheck(

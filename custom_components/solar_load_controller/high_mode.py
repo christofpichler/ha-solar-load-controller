@@ -9,7 +9,23 @@ from __future__ import annotations
 
 # curtailment / grid-import tolerance
 HIGH_FORECAST_CURTAILMENT_HEADROOM_RATIO: float = 0.8
+
+# Absolute floor for the high-mode grid-import tolerance. Kept at the historical
+# value so small installations see no behaviour change.
 HIGH_FORECAST_NO_GRID_TOLERANCE_W: float = 25.0
+
+# The tolerance also scales with load_power_w, because a fixed watt value means
+# very different things across installations: 25 W is 6 % of a 400 W pump but
+# 0.8 % of a 3 kW load, which is below the control accuracy of most hybrid
+# inverters and turns normal regulation overshoot into a shutdown. The floor
+# wins below a 500 W load, so existing small setups are unaffected.
+HIGH_FORECAST_NO_GRID_TOLERANCE_RATIO: float = 0.05
+
+# Minimum share of load_power_w that current PV must actually deliver before the
+# forecast-headroom branch of the export guard may start the load. Without this
+# floor the guard starts purely on "there will be enough sun today", which makes
+# it fire at window opening while PV is still far below the load.
+HIGH_FORECAST_EXPORT_GUARD_MIN_PV_RATIO: float = 1.0
 
 # post-runtime battery top-up targets
 HIGH_FORECAST_POST_RUNTIME_BATTERY_TARGET_SOC: float = 99.0
@@ -23,6 +39,28 @@ HIGH_FORECAST_POST_RUNTIME_NEXT_HOUR_RATIO: float = 1.5
 HIGH_FORECAST_POST_RUNTIME_PRIORITY_BUFFER_MIN_HOURS: float = 2.0
 HIGH_FORECAST_POST_RUNTIME_PRIORITY_BUFFER_MAX_HOURS: float = 8.0
 HIGH_FORECAST_POST_RUNTIME_PRIORITY_BUFFER_EXPONENT: float = 1.6
+
+
+def no_grid_import_tolerance_w(
+    load_power_w: float,
+    *,
+    floor_w: float = HIGH_FORECAST_NO_GRID_TOLERANCE_W,
+    ratio: float = HIGH_FORECAST_NO_GRID_TOLERANCE_RATIO,
+) -> float:
+    """Return the high-mode grid-import tolerance for this installation.
+
+    High mode wants a running load to be carried by solar, not by the grid, so
+    it stops the load once import stays above a small tolerance. That tolerance
+    has to scale: a fixed 25 W is a reasonable margin for a 400 W pump but is
+    well inside the regulation noise of a 3 kW load.
+
+    The absolute floor keeps existing small installations on their previous
+    behaviour; only loads above ``floor_w / ratio`` (500 W at the defaults) get
+    a wider tolerance.
+    """
+    if load_power_w <= 0:
+        return floor_w
+    return round(max(floor_w, load_power_w * ratio), 1)
 
 
 def allow_post_runtime_export_guard_restart(
@@ -127,6 +165,7 @@ def export_guard_run_available(
     forecast_remaining_kwh: float | None,
     battery_charge_required_kwh: float | None,
     curtailment_headroom_ratio: float = HIGH_FORECAST_CURTAILMENT_HEADROOM_RATIO,
+    min_pv_ratio: float = HIGH_FORECAST_EXPORT_GUARD_MIN_PV_RATIO,
 ) -> bool:
     """Return whether forecast suggests running now to avoid clipping later.
 
@@ -160,9 +199,19 @@ def export_guard_run_available(
     if forecast_remaining_kwh is None or battery_charge_required_kwh is None:
         return False
 
-    if battery_power_state == "discharging" and (
-        pv_current_power_w is None or pv_current_power_w < load_power_w
-    ):
+    # The forecast-headroom branch says "today will produce more than the
+    # battery can absorb, so run now instead of clipping later". That is a
+    # statement about the whole day, not about this minute. Without a floor on
+    # current PV it fires as soon as the time window opens, while PV is still
+    # below the load — the load then runs on grid/battery and is cancelled again
+    # seconds later by grid-import protection.
+    # When no PV power sensor is configured we keep the previous behaviour and
+    # fall back to the discharge heuristic instead of blocking the branch
+    # outright.
+    if pv_current_power_w is None:
+        if battery_power_state == "discharging":
+            return False
+    elif pv_current_power_w < load_power_w * min_pv_ratio:
         return False
 
     return (

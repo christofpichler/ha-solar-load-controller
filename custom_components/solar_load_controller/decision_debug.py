@@ -16,7 +16,7 @@ from .decision_log import (
     append_decision_log,
 )
 from .high_mode import (
-    HIGH_FORECAST_NO_GRID_TOLERANCE_W,
+    no_grid_import_tolerance_w,
     HIGH_FORECAST_POST_RUNTIME_BATTERY_TARGET_SOC,
     HIGH_FORECAST_POST_RUNTIME_NEXT_HOUR_RATIO,
     HIGH_FORECAST_POST_RUNTIME_PRIORITY_BUFFER_EXPONENT,
@@ -80,7 +80,9 @@ def build_decision_log_record(
             "grid_import_shutdown_delay_seconds": (
                 view.grid_import_shutdown_delay_seconds
             ),
-            "high_grid_import_tolerance_w": HIGH_FORECAST_NO_GRID_TOLERANCE_W,
+            "high_grid_import_tolerance_w": no_grid_import_tolerance_w(
+                view.load_power_w
+            ),
             "battery_charging_efficiency": view.battery_charging_efficiency,
             "high_forecast_post_runtime_battery_target_soc": (
                 HIGH_FORECAST_POST_RUNTIME_BATTERY_TARGET_SOC

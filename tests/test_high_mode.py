@@ -23,8 +23,11 @@ solar_load_controller.__path__ = [str(PACKAGE_DIR)]
 setattr(custom_components, "solar_load_controller", solar_load_controller)
 
 from custom_components.solar_load_controller.high_mode import (
+    HIGH_FORECAST_NO_GRID_TOLERANCE_RATIO,
+    HIGH_FORECAST_NO_GRID_TOLERANCE_W,
     allow_post_runtime_export_guard_restart,
     export_guard_run_available,
+    no_grid_import_tolerance_w,
     should_prioritize_battery_after_runtime,
 )
 
@@ -302,6 +305,97 @@ class ShouldPrioritizeBatteryAfterRuntimeTest(unittest.TestCase):
                 )
             )
         )
+
+
+class ExportGuardCurrentPvFloorTest(unittest.TestCase):
+    """Forecast-headroom starts must be backed by real PV power right now."""
+
+    def test_forecast_headroom_start_blocked_while_pv_below_load(self) -> None:
+        # Window opening on a high-forecast morning: plenty of forecast left,
+        # battery empty and idle, but PV is still far below the load.
+        self.assertFalse(
+            export_guard_run_available(
+                **_export_guard_inputs(
+                    available_surplus_w=0.0,
+                    usable_battery_charge_w=0.0,
+                    battery_power_state="neutral",
+                    pv_current_power_w=360.0,
+                    forecast_remaining_kwh=10.0,
+                    battery_charge_required_kwh=4.0,
+                )
+            )
+        )
+
+    def test_forecast_headroom_start_allowed_once_pv_covers_load(self) -> None:
+        self.assertTrue(
+            export_guard_run_available(
+                **_export_guard_inputs(
+                    available_surplus_w=0.0,
+                    usable_battery_charge_w=0.0,
+                    battery_power_state="neutral",
+                    pv_current_power_w=900.0,
+                    forecast_remaining_kwh=10.0,
+                    battery_charge_required_kwh=4.0,
+                )
+            )
+        )
+
+    def test_forecast_headroom_keeps_legacy_behaviour_without_pv_sensor(self) -> None:
+        self.assertTrue(
+            export_guard_run_available(
+                **_export_guard_inputs(
+                    available_surplus_w=0.0,
+                    usable_battery_charge_w=0.0,
+                    battery_power_state="neutral",
+                    pv_current_power_w=None,
+                    forecast_remaining_kwh=10.0,
+                    battery_charge_required_kwh=4.0,
+                )
+            )
+        )
+        self.assertFalse(
+            export_guard_run_available(
+                **_export_guard_inputs(
+                    available_surplus_w=0.0,
+                    usable_battery_charge_w=0.0,
+                    battery_power_state="discharging",
+                    pv_current_power_w=None,
+                    forecast_remaining_kwh=10.0,
+                    battery_charge_required_kwh=4.0,
+                )
+            )
+        )
+
+
+class NoGridImportToleranceTest(unittest.TestCase):
+    """The high-mode import tolerance must scale with installation size."""
+
+    def test_small_load_keeps_historical_floor(self) -> None:
+        """Existing small setups must not change behaviour."""
+        self.assertEqual(no_grid_import_tolerance_w(400.0), HIGH_FORECAST_NO_GRID_TOLERANCE_W)
+
+    def test_floor_applies_up_to_the_break_even_load(self) -> None:
+        break_even = HIGH_FORECAST_NO_GRID_TOLERANCE_W / HIGH_FORECAST_NO_GRID_TOLERANCE_RATIO
+        self.assertEqual(
+            no_grid_import_tolerance_w(break_even),
+            HIGH_FORECAST_NO_GRID_TOLERANCE_W,
+        )
+
+    def test_large_load_scales_with_ratio(self) -> None:
+        self.assertEqual(no_grid_import_tolerance_w(3000.0), 150.0)
+        self.assertEqual(no_grid_import_tolerance_w(1500.0), 75.0)
+
+    def test_zero_or_negative_load_falls_back_to_floor(self) -> None:
+        self.assertEqual(no_grid_import_tolerance_w(0.0), HIGH_FORECAST_NO_GRID_TOLERANCE_W)
+        self.assertEqual(no_grid_import_tolerance_w(-100.0), HIGH_FORECAST_NO_GRID_TOLERANCE_W)
+
+    def test_tolerance_is_never_below_the_floor(self) -> None:
+        for load_w in (1.0, 100.0, 499.0, 500.0, 501.0, 5000.0):
+            with self.subTest(load_power_w=load_w):
+                self.assertGreaterEqual(
+                    no_grid_import_tolerance_w(load_w),
+                    HIGH_FORECAST_NO_GRID_TOLERANCE_W,
+                )
 
 
 if __name__ == "__main__":
