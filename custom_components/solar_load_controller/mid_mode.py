@@ -41,24 +41,58 @@ MID_FORECAST_WAIT_NEXT_HOUR_RATIO: float = 0.75
 MID_FORECAST_ASSISTED_HOLD_MINUTES: float = 5.0
 
 
+def battery_discharge_blocks_assist(
+    *,
+    battery_power_state: str,
+    is_load_on: bool,
+    battery_power_w: float | None,
+    load_power_w: float,
+) -> bool:
+    """Return whether battery discharge is a real blocker for an assisted run.
+
+    ``effective_solar_surplus_w`` already adds the running load back in, so it
+    describes the surplus that *would* exist with the load switched off. The
+    battery state must be judged on the same counterfactual, otherwise the
+    controller cancels its own run: the load pushes the battery from charging
+    into discharging, the discharge check fires, the load stops, the battery
+    charges again and the cycle repeats every ``min_off`` window.
+
+    While the load is off the raw state is already the counterfactual state.
+    While the load is on, discharge only counts as a blocker when the battery
+    would still be discharging without the load.
+    """
+    if battery_power_state != "discharging":
+        return False
+    if not is_load_on or battery_power_w is None:
+        return True
+    return (battery_power_w + load_power_w) <= 0
+
+
 def should_allow_mid_mode_assisted_run(
     *,
     effective_solar_surplus_w: float,
     load_power_w: float,
     battery_power_state: str,
     projected_grid_import_exceeds_limit: bool,
+    is_load_on: bool = False,
+    battery_power_w: float | None = None,
     surplus_ratio: float = MID_FORECAST_ASSISTED_SURPLUS_RATIO,
 ) -> bool:
     """Return whether mid mode may start the load with partial solar coverage.
 
     Mid mode uses AC-usable solar surplus, including solar that is currently
     being diverted into battery charging. It still blocks assisted starts while
-    the battery is discharging. The check is intentionally simple: no pressure
-    curve, no priority adjustment.
+    the battery is discharging on its own account. The check is intentionally
+    simple: no pressure curve, no priority adjustment.
     """
     if projected_grid_import_exceeds_limit:
         return False
-    if battery_power_state == "discharging":
+    if battery_discharge_blocks_assist(
+        battery_power_state=battery_power_state,
+        is_load_on=is_load_on,
+        battery_power_w=battery_power_w,
+        load_power_w=load_power_w,
+    ):
         return False
     if load_power_w <= 0:
         return False
@@ -75,6 +109,8 @@ def forecast_assisted_run_available(
     effective_solar_surplus_w: float,
     load_power_w: float,
     battery_power_state: str,
+    is_load_on: bool = False,
+    battery_power_w: float | None = None,
     assisted_hold_minutes: float = MID_FORECAST_ASSISTED_HOLD_MINUTES,
 ) -> bool:
     """Return whether mid mode may run the load via forecast assistance.
@@ -95,6 +131,8 @@ def forecast_assisted_run_available(
         load_power_w=load_power_w,
         battery_power_state=battery_power_state,
         projected_grid_import_exceeds_limit=projected_grid_import_exceeds_limit,
+        is_load_on=is_load_on,
+        battery_power_w=battery_power_w,
     )
 
 

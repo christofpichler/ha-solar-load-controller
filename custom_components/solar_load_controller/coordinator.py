@@ -79,7 +79,7 @@ from .high_mode import (
     export_guard_run_available,
     should_prioritize_battery_after_runtime,
     HIGH_FORECAST_CURTAILMENT_HEADROOM_RATIO,
-    HIGH_FORECAST_NO_GRID_TOLERANCE_W,
+    no_grid_import_tolerance_w,
     HIGH_FORECAST_POST_RUNTIME_BATTERY_TARGET_SOC,
     HIGH_FORECAST_POST_RUNTIME_RESTART_SURPLUS_MARGIN_W,
     HIGH_FORECAST_POST_RUNTIME_NEXT_HOUR_RATIO,
@@ -783,6 +783,8 @@ class SolarLoadController(
             effective_solar_surplus_w=self.mid_mode_solar_surplus_w,
             load_power_w=self.load_power_w,
             battery_power_state=self.battery_power_state,
+            is_load_on=self.is_load_on,
+            battery_power_w=self.battery_power_w,
             assisted_hold_minutes=MID_FORECAST_ASSISTED_HOLD_MINUTES,
         )
 
@@ -852,7 +854,9 @@ class SolarLoadController(
             high_forecast_day_class=FORECAST_DAY_MODE_HIGH,
             is_load_on=self.is_load_on,
             grid_import_w=self.grid_import_w,
-            grid_import_no_grid_tolerance_w=HIGH_FORECAST_NO_GRID_TOLERANCE_W,
+            grid_import_no_grid_tolerance_w=no_grid_import_tolerance_w(
+                self.load_power_w
+            ),
             high_forecast_grid_import_active=self._high_forecast_grid_import_active,
             should_prioritize_battery=self._should_prioritize_battery_after_runtime(),
             allow_post_runtime_restart=self._allow_post_runtime_export_guard_restart(),

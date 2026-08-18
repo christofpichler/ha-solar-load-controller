@@ -11,7 +11,7 @@ from .const import (
     DEFAULT_GRID_IMPORT_LIMIT_W,
     FORECAST_DAY_MODE_HIGH,
 )
-from .high_mode import HIGH_FORECAST_NO_GRID_TOLERANCE_W
+from .high_mode import no_grid_import_tolerance_w
 from .sensor_reader import as_float
 
 
@@ -191,5 +191,7 @@ class GridImportMixin:
             grid_import_limit_w=self.grid_import_limit_w,
             forecast_day_class=self.forecast_day_class,
             high_forecast_day_class=FORECAST_DAY_MODE_HIGH,
-            high_grid_import_tolerance_w=HIGH_FORECAST_NO_GRID_TOLERANCE_W,
+            high_grid_import_tolerance_w=no_grid_import_tolerance_w(
+                self.load_power_w
+            ),
         )

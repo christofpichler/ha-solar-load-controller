@@ -332,5 +332,60 @@ class MidModeForecastAssistedRunAvailableTest(unittest.TestCase):
         )
 
 
+class MidModeBatteryDischargeCounterfactualTest(unittest.TestCase):
+    """Self-inflicted battery discharge must not cancel a running assist."""
+
+    def test_running_load_causing_discharge_does_not_block(self) -> None:
+        # Load is on and eats the 500 W that used to charge the battery, so the
+        # battery now shows a small discharge. Without the load it would still
+        # be charging, so the assist must continue.
+        self.assertTrue(
+            should_allow_mid_mode_assisted_run(
+                effective_solar_surplus_w=400.0,
+                load_power_w=400.0,
+                battery_power_state="discharging",
+                projected_grid_import_exceeds_limit=False,
+                is_load_on=True,
+                battery_power_w=-36.0,
+            )
+        )
+
+    def test_real_discharge_still_blocks_while_load_runs(self) -> None:
+        self.assertFalse(
+            should_allow_mid_mode_assisted_run(
+                effective_solar_surplus_w=400.0,
+                load_power_w=400.0,
+                battery_power_state="discharging",
+                projected_grid_import_exceeds_limit=False,
+                is_load_on=True,
+                battery_power_w=-800.0,
+            )
+        )
+
+    def test_discharge_blocks_start_while_load_is_off(self) -> None:
+        self.assertFalse(
+            should_allow_mid_mode_assisted_run(
+                effective_solar_surplus_w=400.0,
+                load_power_w=400.0,
+                battery_power_state="discharging",
+                projected_grid_import_exceeds_limit=False,
+                is_load_on=False,
+                battery_power_w=-36.0,
+            )
+        )
+
+    def test_grid_protection_still_wins_over_counterfactual(self) -> None:
+        self.assertFalse(
+            should_allow_mid_mode_assisted_run(
+                effective_solar_surplus_w=400.0,
+                load_power_w=400.0,
+                battery_power_state="discharging",
+                projected_grid_import_exceeds_limit=True,
+                is_load_on=True,
+                battery_power_w=-36.0,
+            )
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
