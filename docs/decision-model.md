@@ -160,6 +160,19 @@ The margin subtracted from the import limit before a start
 `max(50 W, 5% of load power)`. It absorbs the uncertainty in the projected
 import, and that uncertainty grows with the size of the load being switched on.
 
+### Sensor availability grace period
+
+Cloud-backed sensors (inverter and forecast vendors) drop to `unavailable` for a
+single update cycle regularly. Treating every blip as a missing sensor stops the
+load and then costs a full `min_off` window before it can come back.
+
+`SensorReader` therefore remembers the last good reading per entity and reuses it
+while the sensor reports `unknown`/`unavailable`, for up to
+`SENSOR_UNAVAILABLE_GRACE_SECONDS` (180 s). Beyond that the value is dropped and
+the decision reaches `missing_sensor` as before, so a genuinely dead sensor still
+stops the load. An entity that disappears entirely is never bridged — that is a
+configuration change, not a dropout.
+
 ### Export-guard PV thresholds
 
 The forecast-headroom branch uses two thresholds, not one:

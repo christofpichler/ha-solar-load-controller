@@ -70,7 +70,10 @@ from custom_components.solar_load_controller.grid_import_tracker import (
     start_margin_w,
 )
 from custom_components.solar_load_controller.load_controller import LoadControlState
-from custom_components.solar_load_controller.sensor_reader import SensorReader
+from custom_components.solar_load_controller.sensor_reader import (
+    SENSOR_UNAVAILABLE_GRACE_SECONDS,
+    SensorReader,
+)
 from custom_components.solar_load_controller.time_window import parse_time
 
 
@@ -217,6 +220,64 @@ class StartMarginTest(unittest.TestCase):
                 self.assertGreaterEqual(
                     start_margin_w(load_w), GRID_IMPORT_START_MARGIN_W
                 )
+
+
+class SensorGracePeriodTest(unittest.TestCase):
+    """Brief cloud dropouts must not read as a missing sensor."""
+
+    def _reader_with_good_reading(self, value="500", unit="W"):
+        hass = _Hass()
+        hass.states.set("sensor.grid", value, unit)
+        reader = SensorReader(hass, {})
+        reader.positive_state_value("sensor.grid")   # prime the memory
+        hass.states.set("sensor.grid", "unavailable", unit)
+        return hass, reader
+
+    def _age_cache(self, reader, entity_id, seconds):
+        value, seen_at = reader._last_known[entity_id]
+        reader._last_known[entity_id] = (value, seen_at - timedelta(seconds=seconds))
+
+    def test_blip_is_bridged_with_last_known_value(self) -> None:
+        _, reader = self._reader_with_good_reading()
+        self.assertEqual(reader.positive_state_value("sensor.grid"), 500.0)
+
+    def test_value_expires_after_the_grace_window(self) -> None:
+        _, reader = self._reader_with_good_reading()
+        self._age_cache(reader, "sensor.grid", SENSOR_UNAVAILABLE_GRACE_SECONDS + 1)
+        self.assertIsNone(reader.positive_state_value("sensor.grid"))
+
+    def test_value_still_bridged_just_inside_the_window(self) -> None:
+        _, reader = self._reader_with_good_reading()
+        self._age_cache(reader, "sensor.grid", SENSOR_UNAVAILABLE_GRACE_SECONDS - 5)
+        self.assertEqual(reader.positive_state_value("sensor.grid"), 500.0)
+
+    def test_unavailable_without_any_previous_value_stays_none(self) -> None:
+        hass = _Hass()
+        hass.states.set("sensor.grid", "unavailable", "W")
+        reader = SensorReader(hass, {})
+        self.assertIsNone(reader.positive_state_value("sensor.grid"))
+
+    def test_recovery_refreshes_the_memory(self) -> None:
+        hass, reader = self._reader_with_good_reading()
+        hass.states.set("sensor.grid", "700", "W")
+        self.assertEqual(reader.positive_state_value("sensor.grid"), 700.0)
+        hass.states.set("sensor.grid", "unavailable", "W")
+        self.assertEqual(reader.positive_state_value("sensor.grid"), 700.0)
+
+    def test_energy_sensor_bridges_and_keeps_unit_conversion(self) -> None:
+        hass = _Hass()
+        hass.states.set("sensor.forecast", "750", "Wh")
+        reader = SensorReader(hass, {})
+        self.assertEqual(reader.energy_sensor_kwh("sensor.forecast"), 0.75)
+
+        hass.states.set("sensor.forecast", "unknown", "Wh")
+        self.assertEqual(reader.energy_sensor_kwh("sensor.forecast"), 0.75)
+
+    def test_a_dead_entity_is_not_bridged(self) -> None:
+        """A removed entity is not a dropout and must not be bridged."""
+        hass, reader = self._reader_with_good_reading()
+        hass.states._values.pop("sensor.grid")
+        self.assertIsNone(reader.positive_state_value("sensor.grid"))
 
 
 if __name__ == "__main__":
