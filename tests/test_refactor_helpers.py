@@ -64,7 +64,11 @@ helpers_storage.Store = _FakeStore
 
 from custom_components.solar_load_controller.const import FORECAST_DAY_MODE_HIGH
 from custom_components.solar_load_controller.forecast_tracker import ForecastTracker
-from custom_components.solar_load_controller.grid_import_tracker import GridImportTracker
+from custom_components.solar_load_controller.grid_import_tracker import (
+    GRID_IMPORT_START_MARGIN_W,
+    GridImportTracker,
+    start_margin_w,
+)
 from custom_components.solar_load_controller.load_controller import LoadControlState
 from custom_components.solar_load_controller.sensor_reader import SensorReader
 from custom_components.solar_load_controller.time_window import parse_time
@@ -188,6 +192,31 @@ class LoadControlStateTest(unittest.TestCase):
                 timeout=timedelta(seconds=30),
             )
         )
+
+
+class StartMarginTest(unittest.TestCase):
+    """The pre-start safety margin must scale with the load being switched on."""
+
+    def test_small_load_keeps_historical_floor(self) -> None:
+        self.assertEqual(start_margin_w(400.0), GRID_IMPORT_START_MARGIN_W)
+
+    def test_large_load_scales_with_ratio(self) -> None:
+        self.assertEqual(start_margin_w(3000.0), 150.0)
+        self.assertEqual(start_margin_w(2000.0), 100.0)
+
+    def test_floor_wins_up_to_one_kilowatt(self) -> None:
+        self.assertEqual(start_margin_w(1000.0), GRID_IMPORT_START_MARGIN_W)
+
+    def test_zero_or_negative_load_falls_back_to_floor(self) -> None:
+        self.assertEqual(start_margin_w(0.0), GRID_IMPORT_START_MARGIN_W)
+        self.assertEqual(start_margin_w(-50.0), GRID_IMPORT_START_MARGIN_W)
+
+    def test_margin_is_never_below_the_floor(self) -> None:
+        for load_w in (1.0, 500.0, 999.0, 1000.0, 1001.0, 5000.0):
+            with self.subTest(load_power_w=load_w):
+                self.assertGreaterEqual(
+                    start_margin_w(load_w), GRID_IMPORT_START_MARGIN_W
+                )
 
 
 if __name__ == "__main__":

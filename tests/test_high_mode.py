@@ -23,6 +23,8 @@ solar_load_controller.__path__ = [str(PACKAGE_DIR)]
 setattr(custom_components, "solar_load_controller", solar_load_controller)
 
 from custom_components.solar_load_controller.high_mode import (
+    HIGH_FORECAST_EXPORT_GUARD_KEEP_PV_RATIO,
+    HIGH_FORECAST_EXPORT_GUARD_MIN_PV_RATIO,
     HIGH_FORECAST_NO_GRID_TOLERANCE_RATIO,
     HIGH_FORECAST_NO_GRID_TOLERANCE_W,
     allow_post_runtime_export_guard_restart,
@@ -395,6 +397,63 @@ class NoGridImportToleranceTest(unittest.TestCase):
                 self.assertGreaterEqual(
                     no_grid_import_tolerance_w(load_w),
                     HIGH_FORECAST_NO_GRID_TOLERANCE_W,
+                )
+
+
+class ExportGuardPvHysteresisTest(unittest.TestCase):
+    """Starting and keeping a run must not share a single PV threshold."""
+
+    def _inputs(self, **overrides):
+        return _export_guard_inputs(
+            available_surplus_w=0.0,
+            usable_battery_charge_w=0.0,
+            battery_power_state="neutral",
+            load_power_w=400.0,
+            forecast_remaining_kwh=10.0,
+            battery_charge_required_kwh=4.0,
+            **overrides,
+        )
+
+    def test_start_still_requires_full_coverage(self) -> None:
+        self.assertFalse(
+            export_guard_run_available(
+                **self._inputs(is_load_on=False, pv_current_power_w=380.0)
+            )
+        )
+        self.assertTrue(
+            export_guard_run_available(
+                **self._inputs(is_load_on=False, pv_current_power_w=400.0)
+            )
+        )
+
+    def test_running_load_survives_a_dip_that_would_block_a_start(self) -> None:
+        """The band between both ratios is where the toggling used to happen."""
+        self.assertTrue(
+            export_guard_run_available(
+                **self._inputs(is_load_on=True, pv_current_power_w=340.0)
+            )
+        )
+
+    def test_running_load_stops_below_the_keep_threshold(self) -> None:
+        self.assertFalse(
+            export_guard_run_available(
+                **self._inputs(is_load_on=True, pv_current_power_w=300.0)
+            )
+        )
+
+    def test_keep_threshold_is_below_the_start_threshold(self) -> None:
+        self.assertLess(
+            HIGH_FORECAST_EXPORT_GUARD_KEEP_PV_RATIO,
+            HIGH_FORECAST_EXPORT_GUARD_MIN_PV_RATIO,
+        )
+
+    def test_missing_pv_sensor_is_unaffected_by_hysteresis(self) -> None:
+        for is_on in (False, True):
+            with self.subTest(is_load_on=is_on):
+                self.assertTrue(
+                    export_guard_run_available(
+                        **self._inputs(is_load_on=is_on, pv_current_power_w=None)
+                    )
                 )
 
 

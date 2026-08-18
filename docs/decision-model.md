@@ -155,6 +155,24 @@ The floor wins below a 500 W load, so small installations keep their previous
 behaviour. Larger loads get a tolerance in proportion to their own regulation
 noise instead of an absolute value that is effectively zero for them.
 
+The margin subtracted from the import limit before a start
+(`grid_import_start_limit_w`) scales the same way, as
+`max(50 W, 5% of load power)`. It absorbs the uncertainty in the projected
+import, and that uncertainty grows with the size of the load being switched on.
+
+### Export-guard PV thresholds
+
+The forecast-headroom branch uses two thresholds, not one:
+
+| State | Required PV |
+|---|---|
+| Load off (start) | `load_power_w * HIGH_FORECAST_EXPORT_GUARD_MIN_PV_RATIO` (100%) |
+| Load on (keep running) | `load_power_w * HIGH_FORECAST_EXPORT_GUARD_KEEP_PV_RATIO` (80%) |
+
+A single threshold would make the start condition double as the stop condition,
+so PV hovering around the load power would toggle the branch on every update.
+Installations without a PV power sensor are unaffected by both.
+
 ## Decision Reasons
 
 The current short decision reasons are:

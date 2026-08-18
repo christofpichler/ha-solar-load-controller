@@ -27,6 +27,12 @@ HIGH_FORECAST_NO_GRID_TOLERANCE_RATIO: float = 0.05
 # it fire at window opening while PV is still far below the load.
 HIGH_FORECAST_EXPORT_GUARD_MIN_PV_RATIO: float = 1.0
 
+# Share of load_power_w that current PV must still deliver to keep an already
+# running load going. Without a second, lower threshold the start condition
+# doubles as the stop condition, so PV hovering around the load power toggles
+# the branch on every update. Only relevant while the load is on.
+HIGH_FORECAST_EXPORT_GUARD_KEEP_PV_RATIO: float = 0.8
+
 # post-runtime battery top-up targets
 HIGH_FORECAST_POST_RUNTIME_BATTERY_TARGET_SOC: float = 99.0
 HIGH_FORECAST_POST_RUNTIME_BATTERY_HEADROOM_KWH: float = 0.05
@@ -166,6 +172,7 @@ def export_guard_run_available(
     battery_charge_required_kwh: float | None,
     curtailment_headroom_ratio: float = HIGH_FORECAST_CURTAILMENT_HEADROOM_RATIO,
     min_pv_ratio: float = HIGH_FORECAST_EXPORT_GUARD_MIN_PV_RATIO,
+    keep_pv_ratio: float = HIGH_FORECAST_EXPORT_GUARD_KEEP_PV_RATIO,
 ) -> bool:
     """Return whether forecast suggests running now to avoid clipping later.
 
@@ -208,11 +215,17 @@ def export_guard_run_available(
     # When no PV power sensor is configured we keep the previous behaviour and
     # fall back to the discharge heuristic instead of blocking the branch
     # outright.
+    # Two thresholds, not one: full coverage to start, a lower one to keep
+    # going. A single threshold would make the start condition double as the
+    # stop condition, so PV hovering around the load power would toggle the
+    # branch on every update.
     if pv_current_power_w is None:
         if battery_power_state == "discharging":
             return False
-    elif pv_current_power_w < load_power_w * min_pv_ratio:
-        return False
+    else:
+        required_ratio = keep_pv_ratio if is_load_on else min_pv_ratio
+        if pv_current_power_w < load_power_w * required_ratio:
+            return False
 
     return (
         forecast_remaining_kwh
