@@ -230,6 +230,16 @@ After minimum runtime is met:
 - a late-day time-priority buffer is added
 - restart decisions become stricter
 
+The daily runtime target is a **floor, not a cap**. Reaching it does not stop
+the load: on a strong forecast day the export guard keeps running it from
+surplus that would otherwise be exported or curtailed, so daily runtime can end
+up well above the configured target. That is intended. What eventually stops the
+load is the end of the time window, grid import, or battery priority — the
+`runtime_met` reason only applies when nothing else justifies continuing.
+
+If a ceiling is wanted, that is a separate feature; there is deliberately none
+today.
+
 ### Key helpers
 
 In [energy.py](/Users/A200029998/Documents/pool-automation/custom_components/solar_load_controller/energy.py):
