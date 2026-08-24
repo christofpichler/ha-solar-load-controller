@@ -28,7 +28,8 @@ TELEMETRY_ENDPOINT = "https://telemetry.cloudpichler.net/heartbeat"
 
 TELEMETRY_INTERVAL = timedelta(days=1)
 TELEMETRY_TIMEOUT_SECONDS = 10
-# Spreads a restart wave over an hour.
+# Delay before the first heartbeat after a start. Raise this to spread a
+# restart wave once more than a handful of installations exist.
 TELEMETRY_STARTUP_JITTER_SECONDS = 0
 
 _STORE_VERSION = 1
