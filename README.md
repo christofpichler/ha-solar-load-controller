@@ -254,6 +254,9 @@ settings.
 Switch it off under **Settings → Devices & Services → Solar Load Controller →
 Configure → Advanced**. The integration behaves identically either way.
 
+The collector that receives it is in [`backend_server/`](backend_server/), and
+the resulting numbers are public: <https://telemetry.cloudpichler.net>
+
 ## Development
 
 Create the local development environment:

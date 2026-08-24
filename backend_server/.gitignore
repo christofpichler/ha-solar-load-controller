@@ -1,0 +1,6 @@
+# Only the collector itself and its documentation are published. Deployment
+# specifics stay local: they describe one particular host, not the software.
+*
+!.gitignore
+!README.md
+!heartbeat.py
