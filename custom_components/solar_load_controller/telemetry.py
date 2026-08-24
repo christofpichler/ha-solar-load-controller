@@ -29,7 +29,7 @@ TELEMETRY_ENDPOINT = "https://telemetry.cloudpichler.net/heartbeat"
 TELEMETRY_INTERVAL = timedelta(days=1)
 TELEMETRY_TIMEOUT_SECONDS = 10
 # Spreads a restart wave over an hour.
-TELEMETRY_STARTUP_JITTER_SECONDS = 3600
+TELEMETRY_STARTUP_JITTER_SECONDS = 0
 
 _STORE_VERSION = 1
 # Not keyed by entry_id: one id per installation, not per config entry.
