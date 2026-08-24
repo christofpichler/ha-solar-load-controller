@@ -55,7 +55,11 @@ Solar Load Controller makes that call automatically:
 - **Manual control always wins** — pause the automation and operate the load by
   hand.
 
-![Mode decision matrix](assets/mode-decision-matrix-en.png)
+![Two days of decisions, pump state and PV output](assets/history-en.png)
+
+Two days in August. Top row the decision reason, below it the pump, underneath
+the PV output. The runs sit on the solar peak instead of next to it, in a few
+long blocks rather than a dozen short ones.
 
 ## Installation
 
@@ -68,7 +72,10 @@ needed.
 2. Restart Home Assistant.
 3. Add it under **Settings → Devices & services → Add integration**.
 
-Setup runs entirely through the config flow, in English or German.
+Setup runs entirely through the config flow — six steps, no YAML, in English
+or German.
+
+<img src="assets/setup-de.png" alt="First step of the config flow" width="420">
 
 ## What you need
 
@@ -104,6 +111,8 @@ Any forecast integration works if it provides stable numeric sensors for
 forecast today in kWh, next hour, and remaining today.
 
 ## How it decides
+
+![Mode decision matrix](assets/mode-decision-matrix-en.png)
 
 The day is classified once each morning after 06:00 from the forecast, in
 kWh/kWp, into one of three classes. A manual override select (`auto`, `low`,
@@ -142,8 +151,13 @@ see [docs/decision-model.md](docs/decision-model.md).
 ## Entities
 
 Entity IDs include the configured integration name. Display names follow your
-Home Assistant language; technical state values stay English so automations
-built on them do not break.
+Home Assistant language — shown here in German; technical state values stay
+English so automations built on them do not break.
+
+<img src="assets/entities-de.png" alt="Controls and sensors in Home Assistant" width="380">
+
+One strong day: four automatic starts, 188 minutes of runtime of which 183 came
+from solar, and nothing forced from the grid.
 
 | Entity | Purpose |
 |---|---|
