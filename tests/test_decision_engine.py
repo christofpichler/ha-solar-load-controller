@@ -507,7 +507,7 @@ class DecisionEngineTest(unittest.TestCase):
             )
         )
 
-        # Engine picks forecast_run — load runs but the force-latch does NOT activate.
+        # Engine picks forecast_run - load runs but the force-latch does NOT activate.
         # This is the wrong outcome on a deadline day, which is why the coordinator
         # must guard against this combination.
         self.assertTrue(result.should_run)

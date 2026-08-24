@@ -3,15 +3,15 @@
 Mid mode is a calm, independent mode for days with moderate solar yield
 (between the low and high thresholds). It does NOT share logic with low mode:
 
-* No runtime-pressure curve — decisions do not become more aggressive over time.
-* Simple hold window — after a forecast_run start, mid mode keeps running for a
+* No runtime-pressure curve - decisions do not become more aggressive over time.
+* Simple hold window - after a forecast_run start, mid mode keeps running for a
   short fixed period (MID_FORECAST_ASSISTED_HOLD_MINUTES) even if the solar
   signal temporarily collapses.  Grid-import protection still applies.
   There is no decayed support signal or hysteresis beyond this plain timer.
-* No force cascade — minimum runtime forcing remains a low-mode responsibility.
-* No battery discharge — charging solar that is usable on the AC side may count,
+* No force cascade - minimum runtime forcing remains a low-mode responsibility.
+* No battery discharge - charging solar that is usable on the AC side may count,
   but an actively discharging battery blocks assisted starts.
-* No next-hour fallback — if forecast_next_hour_kwh is unavailable, mid mode
+* No next-hour fallback - if forecast_next_hour_kwh is unavailable, mid mode
   uses whatever current solar is available instead of waiting.
 
 The two public functions are pure and tested in isolation.
@@ -20,25 +20,36 @@ The two public functions are pure and tested in isolation.
 from __future__ import annotations
 
 # ---------------------------------------------------------------------------
-# Tuning constants — all MID_FORECAST_* live here so that coordinator.py
+# Tuning constants - all MID_FORECAST_* live here so that coordinator.py
 # can import them from a single home.
 # ---------------------------------------------------------------------------
 
-# Fraction of load_power_w that solar must supply for an assisted start.
-# At 0.55 a 450 W load requires at least 247.5 W of solar surplus.
+# Share of load_power_w solar must supply for an assisted start.
 MID_FORECAST_ASSISTED_SURPLUS_RATIO: float = 0.55
 
-# Fraction of a full-load hour expected in the next-hour forecast to justify
-# waiting rather than starting. At 0.75 a 450 W load requires ≥ 0.3375 kWh
-# forecast for the coming hour before mid mode decides to wait.
+# Share of a full-load hour the next-hour forecast must reach to justify waiting.
 MID_FORECAST_WAIT_NEXT_HOUR_RATIO: float = 0.75
 
-# Minutes to hold a forecast_run after the load has started, even if the solar
-# signal temporarily drops below the assisted-run threshold.  Grid-import
-# protection still cancels the hold immediately.  This prevents rapid cycling
-# on installations with noisy solar measurements (e.g. microinverters that
-# report 0 W briefly between measurement cycles).
+# Hold window after a forecast_run start, absorbing brief solar dropouts.
+# Grid-import protection still cancels it immediately.
 MID_FORECAST_ASSISTED_HOLD_MINUTES: float = 5.0
+
+# Deadband on the load-compensated battery reading, absorbing regulation noise
+# around balance. Scales with load power; the floor wins below a 1 kW load.
+MID_FORECAST_DISCHARGE_DEADBAND_W: float = 50.0
+MID_FORECAST_DISCHARGE_DEADBAND_RATIO: float = 0.05
+
+
+def discharge_deadband_w(
+    load_power_w: float,
+    *,
+    floor_w: float = MID_FORECAST_DISCHARGE_DEADBAND_W,
+    ratio: float = MID_FORECAST_DISCHARGE_DEADBAND_RATIO,
+) -> float:
+    """Return how far below zero the compensated battery may sit before blocking."""
+    if load_power_w <= 0:
+        return floor_w
+    return round(max(floor_w, load_power_w * ratio), 1)
 
 
 def battery_discharge_blocks_assist(
@@ -48,24 +59,17 @@ def battery_discharge_blocks_assist(
     battery_power_w: float | None,
     load_power_w: float,
 ) -> bool:
-    """Return whether battery discharge is a real blocker for an assisted run.
+    """Return whether battery discharge blocks an assisted run.
 
-    ``effective_solar_surplus_w`` already adds the running load back in, so it
-    describes the surplus that *would* exist with the load switched off. The
-    battery state must be judged on the same counterfactual, otherwise the
-    controller cancels its own run: the load pushes the battery from charging
-    into discharging, the discharge check fires, the load stops, the battery
-    charges again and the cycle repeats every ``min_off`` window.
-
-    While the load is off the raw state is already the counterfactual state.
-    While the load is on, discharge only counts as a blocker when the battery
-    would still be discharging without the load.
+    Judged on the counterfactual, matching ``effective_solar_surplus_w``: with
+    the load off the raw state applies, with it on the load's draw is credited
+    back and only a remaining discharge beyond the deadband blocks.
     """
     if battery_power_state != "discharging":
         return False
     if not is_load_on or battery_power_w is None:
         return True
-    return (battery_power_w + load_power_w) <= 0
+    return (battery_power_w + load_power_w) <= -discharge_deadband_w(load_power_w)
 
 
 def should_allow_mid_mode_assisted_run(
@@ -147,9 +151,8 @@ def should_wait_for_mid_forecast(
 ) -> bool:
     """Return whether mid mode should wait for a better solar window.
 
-    Unlike low mode, mid mode returns False when forecast_next_hour_kwh is
-    None — there is no "wait because we think something better might come"
-    fallback.  If we have no next-hour data we act on what we see now.
+    Returns False when forecast_next_hour_kwh is None: without next-hour data
+    mid mode acts on current solar rather than waiting.
 
     Args:
         forecast_remaining_kwh: Remaining today forecast; None skips waiting.
@@ -162,10 +165,10 @@ def should_wait_for_mid_forecast(
         next_hour_ratio: Fraction of a full-load hour the next-hour forecast
             must reach to justify waiting.
     """
-    # No remaining forecast — no point waiting.
+    # No remaining forecast - no point waiting.
     if forecast_remaining_kwh is None:
         return False
-    # No next-hour data — use current solar, do not wait.
+    # No next-hour data - use current solar, do not wait.
     if forecast_next_hour_kwh is None:
         return False
     # Not enough slack to absorb a wait period.

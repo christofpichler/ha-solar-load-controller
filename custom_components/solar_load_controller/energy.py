@@ -34,6 +34,24 @@ def usable_battery_charge_for_ac_surplus(
     return round(max(0.0, battery_charge_w - clipped_to_battery_w), 1)
 
 
+def load_compensated_battery_charge_w(
+    battery_power_w: float | None,
+    load_power_w: float,
+    *,
+    is_load_on: bool,
+) -> float:
+    """Return the battery charge power that would exist without the running load.
+
+    While the load is off the raw reading is returned unchanged; while it is on,
+    the load's draw is credited back to the battery.
+    """
+    if battery_power_w is None:
+        return 0.0
+    if is_load_on:
+        battery_power_w += load_power_w
+    return max(0.0, battery_power_w)
+
+
 def household_energy_reserve_kwh(
     base_household_load_w: float,
     reserve_margin_percent: float,

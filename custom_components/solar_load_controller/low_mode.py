@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 # ---------------------------------------------------------------------------
-# Tuning constants — all LOW_FORECAST_* live here so that coordinator.py
+# Tuning constants - all LOW_FORECAST_* live here so that coordinator.py
 # (and the future mid_mode.py) can import them from a single home.
 # ---------------------------------------------------------------------------
 

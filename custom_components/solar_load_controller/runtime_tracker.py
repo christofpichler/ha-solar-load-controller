@@ -6,7 +6,7 @@ label.  The coordinator holds the tracker and delegates all runtime
 arithmetic to it so coordinator.py stays focused on orchestration.
 
 The coordinator keeps _last_turned_on_at and _last_turned_off_at as its
-own fields because they serve min-on/min-off logic and persist state —
+own fields because they serve min-on/min-off logic and persist state -
 not runtime accounting.
 """
 

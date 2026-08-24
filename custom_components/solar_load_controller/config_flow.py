@@ -23,6 +23,7 @@ from .const import (
     CONF_BATTERY_POWER_SENSOR,
     CONF_BATTERY_SOC_SENSOR,
     CONF_DEBUG_SENSOR_ENABLED,
+    CONF_TELEMETRY_ENABLED,
     CONF_EARLIEST_START_TIME,
     CONF_FORECAST_HIGH_THRESHOLD_KWH_PER_KWP,
     CONF_FORECAST_LOW_THRESHOLD_KWH_PER_KWP,
@@ -59,6 +60,7 @@ from .const import (
     DEFAULT_MIN_DAILY_RUNTIME_MINUTES,
     DEFAULT_MIN_OFF_MINUTES,
     DEFAULT_MIN_ON_MINUTES,
+    DEFAULT_TELEMETRY_ENABLED,
     DOMAIN,
 )
 
@@ -318,7 +320,7 @@ class SolarLoadControllerOptionsFlow(config_entries.OptionsFlow):
         )
         return self.async_show_form(
             step_id="advanced",
-            data_schema=vol.Schema(_advanced_schema(merged)),
+            data_schema=vol.Schema(_advanced_options_schema(merged)),
         )
 
 
@@ -616,6 +618,20 @@ def _control_schema(defaults: dict[str, Any]) -> dict[Any, Any]:
 def _advanced_schema(defaults: dict[str, Any]) -> dict[Any, Any]:
     """Return diagnostics and fallback settings schema."""
     return _control_schema(defaults)
+
+
+def _advanced_options_schema(defaults: dict[str, Any]) -> dict[Any, Any]:
+    """Return the advanced schema plus options-only settings.
+
+    The heartbeat switch defaults to on and appears here, not in initial setup.
+    """
+    return {
+        **_control_schema(defaults),
+        vol.Required(
+            CONF_TELEMETRY_ENABLED,
+            default=defaults.get(CONF_TELEMETRY_ENABLED, DEFAULT_TELEMETRY_ENABLED),
+        ): selector.BooleanSelector(),
+    }
 
 
 def _required(key: str, defaults: dict[str, Any]) -> vol.Required:

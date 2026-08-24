@@ -23,7 +23,7 @@ _LOGGER = logging.getLogger("custom_components.solar_load_controller.coordinator
 # value stops being used. Cloud-backed sensors (inverter and forecast vendors)
 # drop out for a single update cycle regularly; treating every blip as a missing
 # sensor stops the load and then costs a full min_off window before it can come
-# back. Only brief gaps are bridged — a genuinely dead sensor still surfaces as
+# back. Only brief gaps are bridged - a genuinely dead sensor still surfaces as
 # missing once the window expires.
 SENSOR_UNAVAILABLE_GRACE_SECONDS: float = 180.0
 

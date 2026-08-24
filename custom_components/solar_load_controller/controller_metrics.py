@@ -36,6 +36,7 @@ from .const import (
 )
 from .energy import (
     household_energy_reserve_kwh,
+    load_compensated_battery_charge_w,
     required_input_energy,
     time_priority_buffer_kwh,
     usable_battery_charge_for_ac_surplus,
@@ -230,7 +231,24 @@ class ControllerMetricsMixin:
 
     @property
     def low_mode_assisted_start_surplus_w(self) -> float:
-        return round(self.available_surplus_w + self.usable_battery_charge_w, 1)
+        """Return the assist surplus with the battery share load-compensated.
+
+        The grid share is left alone: the load's draw is credited once, to the
+        battery.
+        """
+        return round(
+            self.available_surplus_w
+            + usable_battery_charge_for_ac_surplus(
+                load_compensated_battery_charge_w(
+                    self.battery_power_w,
+                    self.load_power_w,
+                    is_load_on=self.is_load_on,
+                ),
+                self.pv_current_power_w,
+                self.inverter_limit_w,
+            ),
+            1,
+        )
 
     @property
     def low_mode_assisted_hold_support_w(self) -> float:

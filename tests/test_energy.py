@@ -23,6 +23,7 @@ solar_load_controller.__path__ = [str(PACKAGE_DIR)]
 setattr(custom_components, "solar_load_controller", solar_load_controller)
 
 from custom_components.solar_load_controller.energy import (
+    load_compensated_battery_charge_w,
     household_energy_reserve_kwh,
     required_input_energy,
     time_priority_buffer_kwh,
@@ -72,6 +73,44 @@ class EnergyHelperTest(unittest.TestCase):
             ),
             1.065,
         )
+
+
+class LoadCompensatedBatteryChargeTest(unittest.TestCase):
+    """Surplus checks gating a running load must use the counterfactual."""
+
+    def test_load_off_returns_the_raw_reading(self) -> None:
+        self.assertEqual(
+            load_compensated_battery_charge_w(500.0, 400.0, is_load_on=False), 500.0
+        )
+
+    def test_load_off_clamps_discharge_to_zero(self) -> None:
+        self.assertEqual(
+            load_compensated_battery_charge_w(-300.0, 400.0, is_load_on=False), 0.0
+        )
+
+    def test_running_load_is_credited_back(self) -> None:
+        """The observed failure: charging drops from 935 W to 452 W once the
+        load runs, falling under the assist threshold and cancelling the run."""
+        self.assertEqual(
+            load_compensated_battery_charge_w(452.0, 400.0, is_load_on=True), 852.0
+        )
+
+    def test_self_inflicted_discharge_becomes_charge_again(self) -> None:
+        self.assertEqual(
+            load_compensated_battery_charge_w(-171.0, 400.0, is_load_on=True), 229.0
+        )
+
+    def test_real_discharge_stays_zero(self) -> None:
+        self.assertEqual(
+            load_compensated_battery_charge_w(-800.0, 400.0, is_load_on=True), 0.0
+        )
+
+    def test_missing_reading_is_zero(self) -> None:
+        for on in (False, True):
+            with self.subTest(is_load_on=on):
+                self.assertEqual(
+                    load_compensated_battery_charge_w(None, 400.0, is_load_on=on), 0.0
+                )
 
 
 if __name__ == "__main__":
