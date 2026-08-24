@@ -243,6 +243,17 @@ for the configured input entities.
 Retention is limited to 7 days or 2000 entries. The exact path is also exposed
 on the debug sensor in the `debug_log.path` attribute.
 
+## Anonymous Usage Statistics
+
+Once a day the integration sends a randomly generated installation ID and its
+version number, so active installations can be counted — the HACS download
+counter cannot distinguish an install from an update or a removal. Nothing else
+is transmitted: no host names, entities, devices, measurements, locations or
+settings.
+
+Switch it off under **Settings → Devices & Services → Solar Load Controller →
+Configure → Advanced**. The integration behaves identically either way.
+
 ## Development
 
 Create the local development environment:
