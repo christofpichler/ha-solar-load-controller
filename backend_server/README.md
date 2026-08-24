@@ -87,6 +87,7 @@ Deleting it there produces a new one and orphans the old row, which then expires
 | `GET` | `/` | Status page — counts and version distribution |
 | `GET` | `/stats.json` | The same numbers as JSON |
 | `GET` | `/health` | Liveness probe |
+| `HEAD` | any GET path | Same status and headers as `GET`, no body |
 | `GET` | `/insights` | Per-installation listing. **Off unless enabled**, see below |
 
 ```json

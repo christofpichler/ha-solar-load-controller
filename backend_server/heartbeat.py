@@ -23,7 +23,7 @@ from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 # Shown in the status page footer. Versioned separately from the integration.
-COLLECTOR_VERSION = "1.0"
+COLLECTOR_VERSION = "1.1"
 
 DB_PATH = os.environ.get("HEARTBEAT_DB", "/data/installations.db")
 STATS_PATH = os.environ.get("HEARTBEAT_STATS", "/data/stats.json")
@@ -481,6 +481,9 @@ class HeartbeatHandler(BaseHTTPRequestHandler):
     server_version = "heartbeat"
     sys_version = ""
 
+    # Set while serving a HEAD request: same headers as GET, no body.
+    _head_only = False
+
     def log_message(self, format: str, *args) -> None:  # noqa: A002
         """Suppress the default access log, which includes the client address."""
         return
@@ -512,7 +515,7 @@ class HeartbeatHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
-        if body:
+        if body and not self._head_only:
             self.wfile.write(body)
 
     def do_POST(self) -> None:  # noqa: N802 - required by BaseHTTPRequestHandler
@@ -555,6 +558,14 @@ class HeartbeatHandler(BaseHTTPRequestHandler):
             return
 
         self._respond(204)
+
+    def do_HEAD(self) -> None:  # noqa: N802 - required by BaseHTTPRequestHandler
+        """Answer with the headers GET would send, without the body."""
+        self._head_only = True
+        try:
+            self.do_GET()
+        finally:
+            self._head_only = False
 
     def do_GET(self) -> None:  # noqa: N802 - required by BaseHTTPRequestHandler
         """Serve the current statistics and a health probe."""
