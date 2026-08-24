@@ -24,28 +24,18 @@ from __future__ import annotations
 # can import them from a single home.
 # ---------------------------------------------------------------------------
 
-# Fraction of load_power_w that solar must supply for an assisted start.
-# At 0.55 a 450 W load requires at least 247.5 W of solar surplus.
+# Share of load_power_w solar must supply for an assisted start.
 MID_FORECAST_ASSISTED_SURPLUS_RATIO: float = 0.55
 
-# Fraction of a full-load hour expected in the next-hour forecast to justify
-# waiting rather than starting. At 0.75 a 450 W load requires ≥ 0.3375 kWh
-# forecast for the coming hour before mid mode decides to wait.
+# Share of a full-load hour the next-hour forecast must reach to justify waiting.
 MID_FORECAST_WAIT_NEXT_HOUR_RATIO: float = 0.75
 
-# Minutes to hold a forecast_run after the load has started, even if the solar
-# signal temporarily drops below the assisted-run threshold.  Grid-import
-# protection still cancels the hold immediately.  This prevents rapid cycling
-# on installations with noisy solar measurements (e.g. microinverters that
-# report 0 W briefly between measurement cycles).
+# Hold window after a forecast_run start, absorbing brief solar dropouts.
+# Grid-import protection still cancels it immediately.
 MID_FORECAST_ASSISTED_HOLD_MINUTES: float = 5.0
 
-# Deadband applied to the load-compensated battery reading before discharge is
-# treated as a real blocker. Hybrid inverters regulate around balance, so a
-# counterfactual result of a few watts below zero is measurement noise rather
-# than a signal: without a deadband a reading of -8 W cancels a run that -8 W
-# in the other direction would have kept. Scales with load power for the same
-# reason the grid tolerance does; the floor wins below a 1 kW load.
+# Deadband on the load-compensated battery reading, absorbing regulation noise
+# around balance. Scales with load power; the floor wins below a 1 kW load.
 MID_FORECAST_DISCHARGE_DEADBAND_W: float = 50.0
 MID_FORECAST_DISCHARGE_DEADBAND_RATIO: float = 0.05
 
@@ -69,20 +59,11 @@ def battery_discharge_blocks_assist(
     battery_power_w: float | None,
     load_power_w: float,
 ) -> bool:
-    """Return whether battery discharge is a real blocker for an assisted run.
+    """Return whether battery discharge blocks an assisted run.
 
-    ``effective_solar_surplus_w`` already adds the running load back in, so it
-    describes the surplus that *would* exist with the load switched off. The
-    battery state must be judged on the same counterfactual, otherwise the
-    controller cancels its own run: the load pushes the battery from charging
-    into discharging, the discharge check fires, the load stops, the battery
-    charges again and the cycle repeats every ``min_off`` window.
-
-    While the load is off the raw state is already the counterfactual state.
-    While the load is on, discharge only counts as a blocker when the battery
-    would still be discharging without the load, by more than a deadband --
-    a counterfactual result of a few watts below zero is inverter regulation
-    noise, not a signal.
+    Judged on the counterfactual, matching ``effective_solar_surplus_w``: with
+    the load off the raw state applies, with it on the load's draw is credited
+    back and only a remaining discharge beyond the deadband blocks.
     """
     if battery_power_state != "discharging":
         return False
@@ -170,9 +151,8 @@ def should_wait_for_mid_forecast(
 ) -> bool:
     """Return whether mid mode should wait for a better solar window.
 
-    Unlike low mode, mid mode returns False when forecast_next_hour_kwh is
-    None — there is no "wait because we think something better might come"
-    fallback.  If we have no next-hour data we act on what we see now.
+    Returns False when forecast_next_hour_kwh is None: without next-hour data
+    mid mode acts on current solar rather than waiting.
 
     Args:
         forecast_remaining_kwh: Remaining today forecast; None skips waiting.

@@ -1,22 +1,10 @@
 #!/usr/bin/env python3
-"""Anonymous installation heartbeat collector for Solar Load Controller.
+"""Anonymous installation heartbeat collector.
 
-Accepts one payload shape and stores nothing else::
+    POST /heartbeat  {"installation_id": "<uuid4>", "version": "1.3.2"}
 
-    POST /heartbeat
-    {"installation_id": "<uuid4>", "version": "1.3.2"}
-
-Deliberate properties:
-
-* **No client addresses are logged.** ``BaseHTTPRequestHandler`` writes the
-  client IP to stderr for every request by default; ``log_message`` is
-  overridden to drop it. The IP is never read, stored or printed.
-* **Rows expire.** Anything not seen for ``RETENTION_DAYS`` is deleted, so the
-  database only ever holds installations that still exist.
-* **Input is validated.** Only a canonical uuid4 and a short version string are
-  accepted, so scanners that find the endpoint cannot fill the table.
-
-Standard library only: no dependencies to install, audit or update.
+Stores those two fields plus arrival timestamps in SQLite. Standard library
+only. See README.md for the data model and endpoints.
 """
 
 from __future__ import annotations
@@ -34,9 +22,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-# Version of this collector. Independent of the integration release: the two
-# change at their own pace, and the footer shows both so a glance at the page
-# says which build of each is in play.
+# Shown in the status page footer. Versioned separately from the integration.
 COLLECTOR_VERSION = "1.0"
 
 DB_PATH = os.environ.get("HEARTBEAT_DB", "/data/installations.db")
@@ -46,15 +32,8 @@ ACTIVE_DAYS = int(os.environ.get("HEARTBEAT_ACTIVE_DAYS", "30"))
 RETENTION_DAYS = int(os.environ.get("HEARTBEAT_RETENTION_DAYS", "400"))
 MAINTENANCE_INTERVAL_SECONDS = int(os.environ.get("HEARTBEAT_MAINTENANCE", "600"))
 
-# Per-installation listing at /insights. It shows individual identifiers and
-# their activity pattern, which is a different kind of data from the aggregate
-# counters, so it does not exist unless it is switched on. Fail closed: an
-# unset flag means the route returns 404, rather than being served openly
-# because a proxy rule was forgotten.
-#
-# Protection is normally the reverse proxy's job. The optional credentials
-# below add a second layer for setups without one; leaving them empty means the
-# route is reachable once enabled, so only do that behind a protected proxy.
+# /insights returns 404 unless enabled by the flag or by setting both
+# credentials. Credentials, when set, are enforced by this process.
 INSIGHTS_ENABLED = os.environ.get("HEARTBEAT_INSIGHTS", "").strip().lower() in {
     "1",
     "true",
@@ -64,7 +43,6 @@ INSIGHTS_ENABLED = os.environ.get("HEARTBEAT_INSIGHTS", "").strip().lower() in {
 INSIGHTS_USER = os.environ.get("HEARTBEAT_INSIGHTS_USER", "")
 INSIGHTS_PASSWORD = os.environ.get("HEARTBEAT_INSIGHTS_PASSWORD", "")
 
-# A heartbeat is two short fields; anything larger is not one.
 MAX_BODY_BYTES = 512
 VERSION_PATTERN = re.compile(r"^[0-9A-Za-z][0-9A-Za-z.+_-]{0,31}$")
 
@@ -105,8 +83,7 @@ def init_db() -> None:
         connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_last_seen ON installations(last_seen)"
         )
-        # Expired installations are counted here before their row is dropped,
-        # so the all-time total survives without keeping the identifier.
+        # Counter for rows removed by prune_stale, kept for the all-time total.
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS retired (
@@ -135,12 +112,7 @@ def record_heartbeat(installation_id: str, version: str) -> None:
 
 
 def prune_stale() -> int:
-    """Retire installations that have not reported for RETENTION_DAYS.
-
-    The row is deleted, so the identifier does not live on indefinitely, but a
-    counter is raised first so the installation keeps counting towards the
-    all-time total.
-    """
+    """Delete rows older than RETENTION_DAYS, adding them to the retired count."""
     cutoff = (
         datetime.now(timezone.utc) - timedelta(days=RETENTION_DAYS)
     ).isoformat(timespec="seconds")
@@ -193,7 +165,7 @@ def build_stats() -> dict:
 
 
 def list_installations() -> list[dict]:
-    """Return every stored installation. Only reachable behind authentication."""
+    """Return every stored installation."""
     with _DB_LOCK, _connect() as connection:
         rows = connection.execute(
             """
@@ -262,8 +234,7 @@ def insights_credentials_ok(header: str | None) -> bool:
         user, _, password = decoded.decode("utf-8").partition(":")
     except (ValueError, UnicodeDecodeError):
         return False
-    # compare_digest on both halves so a wrong user is not distinguishable
-    # from a wrong password by how long the answer takes.
+    # Constant-time on both halves.
     return (
         hmac.compare_digest(user, INSIGHTS_USER)
         and hmac.compare_digest(password, INSIGHTS_PASSWORD)
@@ -315,9 +286,7 @@ STATUS_PAGE = """<!doctype html>
   td.v { font-weight: 600; white-space: nowrap; padding-right: 1rem; font-variant-numeric: tabular-nums; }
   td.n { text-align: right; color: var(--muted); white-space: nowrap;
          padding-left: 1rem; font-variant-numeric: tabular-nums; }
-  /* Without an explicit width this cell collapses to zero: its width would
-     depend on the bar, whose width depends on the cell. */
-  td.bar { width: 100%; }
+  td.bar { width: 100%; }   /* explicit width; auto layout collapses it to 0 */
   .track { background: var(--bar); border-radius: 4px; height: 9px; width: 100%; }
   .fill { background: var(--accent); border-radius: 4px; height: 9px; }
   footer { margin-top: 2rem; color: var(--muted); font-size: .8rem;
@@ -366,7 +335,7 @@ STATUS_PAGE = """<!doctype html>
              "<td class='n'>" + n + " \u00b7 " + pct + "%</td></tr>";
     }).join("") || "<tr><td class='n'>no data yet</td></tr>";
 
-    // Highest version seen, compared numerically so 1.3.10 beats 1.3.9.
+    // Numeric compare so 1.3.10 > 1.3.9.
     const rank = (v) => (v.match(/\\d+/g) || []).map(Number);
     const newest = entries.map(([v]) => v).sort((a, b) => {
       const x = rank(a), y = rank(b);
@@ -433,8 +402,7 @@ INSIGHTS_PAGE = """<!doctype html>
   td.id { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem; }
   td.v { font-weight: 600; }
   td.num { color: var(--muted); font-variant-numeric: tabular-nums; }
-  /* Needs td.num in the selector: a bare .stale loses to td.num. */
-  td.num.stale { color: var(--stale); }
+  td.num.stale { color: var(--stale); }   /* td.num would win over .stale */
   footer { margin-top: 2rem; color: var(--muted); font-size: .8rem;
            border-top: 1px solid var(--line); padding-top: .9rem;
            display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
@@ -514,16 +482,11 @@ class HeartbeatHandler(BaseHTTPRequestHandler):
     sys_version = ""
 
     def log_message(self, format: str, *args) -> None:  # noqa: A002
-        """Drop the default access log.
-
-        The default implementation prints the client address on every request.
-        Not logging it at all is the simplest way to guarantee it is never
-        stored.
-        """
+        """Suppress the default access log, which includes the client address."""
         return
 
     def _unauthorized(self) -> None:
-        """Ask for credentials without revealing whether the path exists."""
+        """Send a 401 with a Basic challenge."""
         self.send_response(401)
         self.send_header("WWW-Authenticate", 'Basic realm="insights"')
         self.send_header("Content-Length", "0")

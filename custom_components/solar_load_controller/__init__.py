@@ -23,8 +23,7 @@ PLATFORMS: tuple[Platform, ...] = (
     Platform.SWITCH,
 )
 
-# The heartbeat identifies the installation, so it is shared by all config
-# entries rather than started once per entry.
+# Shared by all config entries: one heartbeat per installation.
 DATA_TELEMETRY = "telemetry"
 
 

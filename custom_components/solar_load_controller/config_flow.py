@@ -621,12 +621,9 @@ def _advanced_schema(defaults: dict[str, Any]) -> dict[Any, Any]:
 
 
 def _advanced_options_schema(defaults: dict[str, Any]) -> dict[Any, Any]:
-    """Return the advanced schema plus settings that only appear in options.
+    """Return the advanced schema plus options-only settings.
 
-    The anonymous-heartbeat switch is deliberately not part of initial setup:
-    it defaults to on, so leaving it out of the config flow keeps a six-step
-    setup from growing a seventh field. It stays reachable and documented under
-    the integration options, and in the README.
+    The heartbeat switch defaults to on and appears here, not in initial setup.
     """
     return {
         **_control_schema(defaults),

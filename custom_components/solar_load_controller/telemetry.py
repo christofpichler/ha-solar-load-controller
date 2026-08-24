@@ -1,32 +1,8 @@
 """Anonymous installation heartbeat.
 
-The HACS download counter cannot distinguish a fresh install from an update, a
-re-download or a removed installation, so it says nothing about how many
-installations are actually running. This module answers that one question and
-nothing else.
-
-What leaves the installation
-----------------------------
-Exactly two fields, once a day::
-
-    {"installation_id": "<random uuid4>", "version": "1.3.2"}
-
-The installation id is generated locally on first run and stored in
-``.storage``. It is a random uuid4 with no relation to the machine, the
-Home Assistant instance, the configuration or the user. Nothing else is
-collected: no host names, no entity or device information, no sensor readings,
-no location, no configuration values.
-
-Behaviour
----------
-* The request runs as a background task and never blocks setup or a decision.
-* Any failure - no network, DNS down, server unreachable, error response - is
-  swallowed and logged at debug level. The integration works exactly the same
-  with the endpoint permanently unreachable.
-* The first heartbeat is delayed by a random offset so installations do not all
-  arrive in the same minute.
-* One heartbeat per Home Assistant instance, not per config entry.
-* Can be switched off in the integration options.
+Posts ``{"installation_id": "<uuid4>", "version": "..."}`` once a day. The id is
+generated on first run and stored in ``.storage``. Runs as a background task and
+swallows every failure at debug level. Can be switched off in the options.
 """
 
 from __future__ import annotations
@@ -52,12 +28,11 @@ TELEMETRY_ENDPOINT = "https://telemetry.cloudpichler.net/heartbeat"
 
 TELEMETRY_INTERVAL = timedelta(days=1)
 TELEMETRY_TIMEOUT_SECONDS = 10
-# Spread first contact over an hour so a restart wave does not arrive at once.
+# Spreads a restart wave over an hour.
 TELEMETRY_STARTUP_JITTER_SECONDS = 3600
 
 _STORE_VERSION = 1
-# Deliberately not keyed by entry_id: the id identifies the installation, and a
-# second config entry is still the same installation.
+# Not keyed by entry_id: one id per installation, not per config entry.
 _STORE_KEY = f"{DOMAIN}_installation_id"
 
 
@@ -89,10 +64,7 @@ async def async_send_heartbeat(
     version: str,
     endpoint: str = TELEMETRY_ENDPOINT,
 ) -> bool:
-    """Send one heartbeat. Return whether it was accepted.
-
-    Never raises: telemetry must not be able to affect the integration.
-    """
+    """Send one heartbeat and return whether it was accepted. Never raises."""
     session = async_get_clientsession(hass)
     payload = {"installation_id": installation_id, "version": version}
     try:
@@ -105,7 +77,7 @@ async def async_send_heartbeat(
             return False
     except asyncio.CancelledError:
         raise
-    except Exception as err:  # noqa: BLE001 - telemetry must never propagate
+    except Exception as err:  # noqa: BLE001
         _LOGGER.debug("Telemetry heartbeat failed: %s", err)
         return False
 
@@ -166,7 +138,7 @@ class TelemetryHeartbeat:
             version = await async_current_version(self.hass)
         except asyncio.CancelledError:
             raise
-        except Exception as err:  # noqa: BLE001 - telemetry must never propagate
+        except Exception as err:  # noqa: BLE001
             _LOGGER.debug("Could not prepare telemetry heartbeat: %s", err)
             return
 

@@ -42,15 +42,8 @@ def load_compensated_battery_charge_w(
 ) -> float:
     """Return the battery charge power that would exist without the running load.
 
-    Surplus checks that gate an *already running* load have to be evaluated on
-    the counterfactual "what would this look like with the load off", otherwise
-    the load invalidates its own start condition: it eats the charge power that
-    justified starting it, the check drops below its threshold and the run is
-    cancelled — every ``min_off`` window.
-
-    While the load is off the raw reading already is the counterfactual, so
-    nothing is added. While it is on, the load's draw is credited back to the
-    battery.
+    While the load is off the raw reading is returned unchanged; while it is on,
+    the load's draw is credited back to the battery.
     """
     if battery_power_w is None:
         return 0.0

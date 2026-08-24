@@ -231,13 +231,10 @@ class ControllerMetricsMixin:
 
     @property
     def low_mode_assisted_start_surplus_w(self) -> float:
-        """Return the assist surplus, judged without the running load.
+        """Return the assist surplus with the battery share load-compensated.
 
-        The battery share is load-compensated: while the load runs it eats the
-        charge power that justified starting it, so an uncompensated reading
-        drops below the assist threshold and cancels the run it caused. The
-        grid share needs no compensation — it is credited to the battery, not
-        counted twice.
+        The grid share is left alone: the load's draw is credited once, to the
+        battery.
         """
         return round(
             self.available_surplus_w
