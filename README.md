@@ -6,7 +6,7 @@
 
 <img src="assets/icon.svg" alt="Solar Load Controller icon" width="96">
 
-Runs a switchable load when solar energy is actually useful — and still
+Runs a switchable load when solar energy is actually useful - and still
 guarantees it runs long enough on days when it is not.
 
 It combines live grid import and export, a PV forecast, optional battery data
@@ -17,7 +17,7 @@ YAML, no hardcoded values, no assumptions about your hardware.
 
 You will get something out of this if:
 
-- Your PV array is larger than your inverter can output — a 1.8 kWp setup
+- Your PV array is larger than your inverter can output - a 1.8 kWp setup
   behind an 800 W limit, for example.
 - You have a load worth scheduling: a pool pump, a water heater, a
   dehumidifier, a car charger, anything behind a `switch` or `input_boolean`.
@@ -32,7 +32,7 @@ threshold automation will do and you do not need this.
 ## The problem it solves
 
 On a strong day the battery fills up and the inverter can no longer use the
-full available solar power — energy is clipped and wasted. On a weak day the
+full available solar power - energy is clipped and wasted. On a weak day the
 load still has to run, and forcing it at the wrong moment means buying
 electricity you did not need to.
 
@@ -42,17 +42,17 @@ grid. A threshold automation cannot tell the difference, so it oscillates.
 
 Solar Load Controller makes that call automatically:
 
-- **Weak forecast days** — stays defensive early, waits while the forecast and
+- **Weak forecast days** - stays defensive early, waits while the forecast and
   the remaining time still justify it, and forces runtime only when the
   deadline demands it.
-- **Strong forecast days** — uses surplus before it is clipped, then becomes
+- **Strong forecast days** - uses surplus before it is clipped, then becomes
   stricter once the daily target is met so the battery can still finish
   charging.
-- **House loads take priority** — when the household consumes the available
+- **House loads take priority** - when the household consumes the available
   inverter output, the controlled load stops.
-- **Spikes are filtered** — a two-second smart meter or inverter reaction does
+- **Spikes are filtered** - a two-second smart meter or inverter reaction does
   not switch anything.
-- **Manual control always wins** — pause the automation and operate the load by
+- **Manual control always wins** - pause the automation and operate the load by
   hand.
 
 ![Two days of decisions, pump state and PV output](assets/history-en.png)
@@ -63,7 +63,7 @@ long blocks rather than a dozen short ones.
 
 ## Installation
 
-Solar Load Controller is in the **HACS default store** — no custom repository
+Solar Load Controller is in the **HACS default store** - no custom repository
 needed.
 
 [![Open in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=christofpichler&repository=ha-solar-load-controller&category=integration)
@@ -72,7 +72,7 @@ needed.
 2. Restart Home Assistant.
 3. Add it under **Settings → Devices & services → Add integration**.
 
-Setup runs entirely through the config flow — six steps, no YAML, in English
+Setup runs entirely through the config flow - six steps, no YAML, in English
 or German.
 
 <img src="assets/setup-de.png" alt="First step of the config flow" width="420">
@@ -151,7 +151,7 @@ see [docs/decision-model.md](docs/decision-model.md).
 ## Entities
 
 Entity IDs include the configured integration name. Display names follow your
-Home Assistant language — shown here in German; technical state values stay
+Home Assistant language - shown here in German; technical state values stay
 English so automations built on them do not break.
 
 <img src="assets/entities-de.png" alt="Controls and sensors in Home Assistant" width="380">
@@ -208,13 +208,13 @@ Report bugs, unexpected switching or setup problems here:
 [GitHub Issues](https://github.com/christofpichler/ha-solar-load-controller/issues)
 
 With debug enabled, include the relevant lines from
-`/config/solar_load_controller_decisions.jsonl` — they usually contain the
+`/config/solar_load_controller_decisions.jsonl` - they usually contain the
 whole answer.
 
 ## Anonymous usage statistics
 
 Once a day the integration sends a randomly generated installation ID and its
-version number, so active installations can be counted — the HACS download
+version number, so active installations can be counted - the HACS download
 counter cannot distinguish an install from an update or a removal. Nothing else
 is transmitted: no host names, entities, devices, measurements, locations or
 settings.

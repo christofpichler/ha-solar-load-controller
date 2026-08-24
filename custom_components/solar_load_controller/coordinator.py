@@ -307,9 +307,9 @@ class SolarLoadController(
 
         Restored fields
         ---------------
-        * ``_runtime_force_latched`` – ensures an in-progress forced runtime
+        * ``_runtime_force_latched`` - ensures an in-progress forced runtime
           run survives a mid-day HA restart.
-        * ``_last_turned_off_at`` – preserves the min-off timer context so the
+        * ``_last_turned_off_at`` - preserves the min-off timer context so the
           pump does not turn on too soon immediately after restart.
         """
         if (

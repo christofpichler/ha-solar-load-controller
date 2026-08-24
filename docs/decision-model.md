@@ -25,9 +25,9 @@ that day unless the user applies a manual mode override.
 
 Current day classes:
 
-- `low` — below the configured low threshold (default < 2.0 kWh/kWp)
-- `mid` — between the low and high thresholds (default 2.0–5.0 kWh/kWp)
-- `high` — at or above the configured high threshold (default ≥ 5.0 kWh/kWp)
+- `low` - below the configured low threshold (default < 2.0 kWh/kWp)
+- `mid` - between the low and high thresholds (default 2.0-5.0 kWh/kWp)
+- `high` - at or above the configured high threshold (default ≥ 5.0 kWh/kWp)
 
 ## Core Calculations
 
@@ -114,7 +114,7 @@ Two ordering rules are deliberate and easy to get wrong:
    longer damps anything.
 2. **`min_on` outranks the soft high-mode tolerance**
    (`HIGH_FORECAST_NO_GRID_TOLERANCE_W`, 25 W). Import between the tolerance and
-   the configured limit is ridden out for the remainder of the minimum on-time —
+   the configured limit is ridden out for the remainder of the minimum on-time -
    that brief spike is exactly the rapid off/on switching `min_on` exists to
    prevent.
 
@@ -170,7 +170,7 @@ load and then costs a full `min_off` window before it can come back.
 while the sensor reports `unknown`/`unavailable`, for up to
 `SENSOR_UNAVAILABLE_GRACE_SECONDS` (180 s). Beyond that the value is dropped and
 the decision reaches `missing_sensor` as before, so a genuinely dead sensor still
-stops the load. An entity that disappears entirely is never bridged — that is a
+stops the load. An entity that disappears entirely is never bridged - that is a
 configuration change, not a dropout.
 
 ### Load-compensated surplus checks
@@ -188,7 +188,7 @@ Two places apply this:
   (`energy.load_compensated_battery_charge_w`).
 * `mid_mode.battery_discharge_blocks_assist` judges discharge on the same
   counterfactual, and only blocks past a deadband
-  (`max(50 W, 5% of load power)`) — hybrid inverters regulate around balance,
+  (`max(50 W, 5% of load power)`) - hybrid inverters regulate around balance,
   so a compensated result of a few watts below zero is measurement noise, not
   a signal.
 
@@ -256,7 +256,7 @@ The daily runtime target is a **floor, not a cap**. Reaching it does not stop
 the load: on a strong forecast day the export guard keeps running it from
 surplus that would otherwise be exported or curtailed, so daily runtime can end
 up well above the configured target. That is intended. What eventually stops the
-load is the end of the time window, grid import, or battery priority — the
+load is the end of the time window, grid import, or battery priority - the
 `runtime_met` reason only applies when nothing else justifies continuing.
 
 If a ceiling is wanted, that is a separate feature; there is deliberately none
@@ -456,10 +456,10 @@ These user-configurable values most strongly affect low-mode behavior:
 
 ## Mid Mode
 
-Mid mode covers moderate forecast days — days that are neither tight enough for
+Mid mode covers moderate forecast days - days that are neither tight enough for
 low-mode deadline management nor abundant enough for high-mode aggressive surplus
 usage. It activates when the day's `forecast_today_kwh / pv_size_kwp` falls
-between the two configured thresholds (default: 2.0 – 5.0 kWh/kWp).
+between the two configured thresholds (default: 2.0 - 5.0 kWh/kWp).
 
 ![Mid Mode Concept](../assets/mid-mode-concept-en.png)
 
@@ -467,20 +467,20 @@ between the two configured thresholds (default: 2.0 – 5.0 kWh/kWp).
 
 Mid mode is intentionally calm and flat:
 
-- no runtime pressure curve — it does not ramp behavior based on time-of-day
-- simple hold window — after a `forecast_run` start, mid mode keeps the load
+- no runtime pressure curve - it does not ramp behavior based on time-of-day
+- simple hold window - after a `forecast_run` start, mid mode keeps the load
   running for a short fixed period (`MID_FORECAST_ASSISTED_HOLD_MINUTES`)
   even if the solar signal temporarily collapses; grid-import protection still
   cancels immediately; this prevents rapid cycling on installations with noisy
   solar measurements (e.g. microinverters that report 0 W briefly)
-- no force cascade — it never escalates to `runtime_force` on its own
-- no battery discharge — mid mode may count AC-usable solar that is currently
+- no force cascade - it never escalates to `runtime_force` on its own
+- no battery discharge - mid mode may count AC-usable solar that is currently
   routed into battery charging, but it blocks assisted starts while the battery
   is actively discharging
 
 `runtime_force` is still available via the shared coordinator path, but mid mode
 itself does not activate it. If minimum runtime is not met by end of day and low
-mode cannot force it, the coordinator escalates — but mid mode does not push
+mode cannot force it, the coordinator escalates - but mid mode does not push
 toward that.
 
 ### Main behavior
@@ -490,7 +490,7 @@ Mid mode has two main phases:
 1. **Wait when short-term solar is too weak**
    - if `forecast_next_hour_kwh` shows enough upcoming energy and the time
      slack is sufficient, it emits `forecast` (`DECISION_FORECAST_WAIT`)
-   - if `forecast_next_hour_kwh` is unavailable, mid mode does **not** wait —
+   - if `forecast_next_hour_kwh` is unavailable, mid mode does **not** wait -
      it falls through and acts on current solar immediately (contrast with low
      mode which waits defensively when next-hour data is missing)
 
@@ -502,7 +502,7 @@ Mid mode has two main phases:
    - charging solar can count here; this lets mid mode use moderate solar
      windows instead of letting the battery absorb the whole window first
    - active battery discharge still blocks assisted starts
-   - the threshold is not time-scaled — it is the same at 09:00 as at 15:00
+   - the threshold is not time-scaled - it is the same at 09:00 as at 15:00
 
 When neither condition applies and there is no real solar surplus, the decision
 falls through toward `waiting` or `runtime_force` (if the coordinator's shared
@@ -525,7 +525,7 @@ In [mid_mode.py](/Users/A200029998/Documents/pool-automation/custom_components/s
 - `should_wait_for_mid_forecast(...)`
   - returns `True` when there is still meaningful slack, the next-hour forecast
     is high enough to justify waiting, and forecast data is available
-  - returns `False` immediately if `forecast_next_hour_kwh is None` — this is
+  - returns `False` immediately if `forecast_next_hour_kwh is None` - this is
     the key behavioral difference from low mode
 
 The coordinator guard in `_mid_forecast_assisted_run_available` also enforces
@@ -584,9 +584,9 @@ interacts with the shared runtime path:
 The clearest difference between mid and low mode is how each handles a missing
 `forecast_next_hour_kwh` sensor:
 
-- **Low mode** waits when next-hour data is missing — the day is tight, so
+- **Low mode** waits when next-hour data is missing - the day is tight, so
   waiting is the safer default
-- **Mid mode** does not wait when next-hour data is missing — the day has enough
+- **Mid mode** does not wait when next-hour data is missing - the day has enough
   forecast headroom that waiting on absent data serves no purpose; it acts on
   whatever current solar is available instead
 

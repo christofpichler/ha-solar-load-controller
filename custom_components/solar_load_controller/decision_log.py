@@ -37,7 +37,7 @@ def append_decision_log(path: str, record: dict[str, Any]) -> None:
     Uses a module-level lock to prevent concurrent writes from the HA
     executor thread pool corrupting the file.
 
-    Fast path: if the file has fewer lines than the maximum, just append —
+    Fast path: if the file has fewer lines than the maximum, just append -
     no read required.  Full read-filter-rewrite only happens when pruning is
     needed (i.e. the file is at or near the entry limit or contains stale
     records).

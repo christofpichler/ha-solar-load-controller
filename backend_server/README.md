@@ -63,7 +63,7 @@ without its id being kept.
 
 The window is longer than the obvious 90 days on purpose: this controller runs
 seasonally. A pool pump is typically shut down over winter, and an installation
-that goes quiet for a few months has not disappeared — it is waiting for spring.
+that goes quiet for a few months has not disappeared - it is waiting for spring.
 
 **Input is validated.** Only a canonical uuid4 and a short version string are
 accepted, so a scanner that finds the endpoint cannot fill the table with junk.
@@ -71,7 +71,7 @@ accepted, so a scanner that finds the endpoint cannot fill the table with junk.
 **Per-installation data is not served by default.** The aggregate endpoints
 (`/` and `/stats.json`) never expose an identifier. There is a `/insights`
 route that lists them for the operator, and it returns `404` unless it is
-explicitly switched on — an unset flag fails closed rather than relying on a
+explicitly switched on - an unset flag fails closed rather than relying on a
 proxy rule having been configured correctly.
 
 **The installation id means nothing on its own.** It is generated with
@@ -84,7 +84,7 @@ Deleting it there produces a new one and orphans the old row, which then expires
 | Method | Path | Purpose |
 |---|---|---|
 | `POST` | `/heartbeat` | Record one installation. `204` on success, `400` on bad input |
-| `GET` | `/` | Status page — counts and version distribution |
+| `GET` | `/` | Status page - counts and version distribution |
 | `GET` | `/stats.json` | The same numbers as JSON |
 | `GET` | `/health` | Liveness probe |
 | `HEAD` | any GET path | Same status and headers as `GET`, no body |
@@ -102,7 +102,7 @@ Deleting it there produces a new one and orphans the old row, which then expires
 `active` is what reported within `HEARTBEAT_ACTIVE_DAYS`, `known` is what is
 still stored, `all_time` adds the retired ones. An installation that goes quiet
 for longer than the retention window and later returns is counted twice in the
-all-time figure — the point of dropping the id is that it can no longer be
+all-time figure - the point of dropping the id is that it can no longer be
 recognised.
 
 `GET /heartbeat` returns `404`: the intake is POST-only, and the reporting
@@ -124,7 +124,7 @@ endpoints accept nothing.
 
 ## Running it
 
-Standard library only — no dependencies to install, audit or update:
+Standard library only - no dependencies to install, audit or update:
 
 ```bash
 HEARTBEAT_DB=./installations.db HEARTBEAT_STATS=./stats.json \

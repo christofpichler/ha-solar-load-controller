@@ -3,15 +3,15 @@
 Mid mode is a calm, independent mode for days with moderate solar yield
 (between the low and high thresholds). It does NOT share logic with low mode:
 
-* No runtime-pressure curve — decisions do not become more aggressive over time.
-* Simple hold window — after a forecast_run start, mid mode keeps running for a
+* No runtime-pressure curve - decisions do not become more aggressive over time.
+* Simple hold window - after a forecast_run start, mid mode keeps running for a
   short fixed period (MID_FORECAST_ASSISTED_HOLD_MINUTES) even if the solar
   signal temporarily collapses.  Grid-import protection still applies.
   There is no decayed support signal or hysteresis beyond this plain timer.
-* No force cascade — minimum runtime forcing remains a low-mode responsibility.
-* No battery discharge — charging solar that is usable on the AC side may count,
+* No force cascade - minimum runtime forcing remains a low-mode responsibility.
+* No battery discharge - charging solar that is usable on the AC side may count,
   but an actively discharging battery blocks assisted starts.
-* No next-hour fallback — if forecast_next_hour_kwh is unavailable, mid mode
+* No next-hour fallback - if forecast_next_hour_kwh is unavailable, mid mode
   uses whatever current solar is available instead of waiting.
 
 The two public functions are pure and tested in isolation.
@@ -20,7 +20,7 @@ The two public functions are pure and tested in isolation.
 from __future__ import annotations
 
 # ---------------------------------------------------------------------------
-# Tuning constants — all MID_FORECAST_* live here so that coordinator.py
+# Tuning constants - all MID_FORECAST_* live here so that coordinator.py
 # can import them from a single home.
 # ---------------------------------------------------------------------------
 
@@ -165,10 +165,10 @@ def should_wait_for_mid_forecast(
         next_hour_ratio: Fraction of a full-load hour the next-hour forecast
             must reach to justify waiting.
     """
-    # No remaining forecast — no point waiting.
+    # No remaining forecast - no point waiting.
     if forecast_remaining_kwh is None:
         return False
-    # No next-hour data — use current solar, do not wait.
+    # No next-hour data - use current solar, do not wait.
     if forecast_next_hour_kwh is None:
         return False
     # Not enough slack to absorb a wait period.

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 # ---------------------------------------------------------------------------
-# Tuning constants — all HIGH_FORECAST_* live here so coordinator.py
+# Tuning constants - all HIGH_FORECAST_* live here so coordinator.py
 # (and the future mid_mode.py) can import them from a single home.
 # ---------------------------------------------------------------------------
 
@@ -210,7 +210,7 @@ def export_guard_run_available(
     # battery can absorb, so run now instead of clipping later". That is a
     # statement about the whole day, not about this minute. Without a floor on
     # current PV it fires as soon as the time window opens, while PV is still
-    # below the load — the load then runs on grid/battery and is cancelled again
+    # below the load - the load then runs on grid/battery and is cancelled again
     # seconds later by grid-import protection.
     # When no PV power sensor is configured we keep the previous behaviour and
     # fall back to the discharge heuristic instead of blocking the branch
