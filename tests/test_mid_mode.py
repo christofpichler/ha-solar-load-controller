@@ -24,6 +24,10 @@ setattr(custom_components, "solar_load_controller", solar_load_controller)
 
 from custom_components.solar_load_controller.mid_mode import (
     MID_FORECAST_ASSISTED_HOLD_MINUTES,
+    MID_FORECAST_DISCHARGE_DEADBAND_RATIO,
+    MID_FORECAST_DISCHARGE_DEADBAND_W,
+    battery_discharge_blocks_assist,
+    discharge_deadband_w,
     MID_FORECAST_ASSISTED_SURPLUS_RATIO,
     MID_FORECAST_WAIT_NEXT_HOUR_RATIO,
     forecast_assisted_run_available as mid_mode_forecast_assisted_run_available,
@@ -385,6 +389,61 @@ class MidModeBatteryDischargeCounterfactualTest(unittest.TestCase):
                 battery_power_w=-36.0,
             )
         )
+
+
+class DischargeDeadbandTest(unittest.TestCase):
+    """A few watts below zero is inverter noise, not a reason to stop."""
+
+    def test_floor_applies_to_small_loads(self) -> None:
+        self.assertEqual(discharge_deadband_w(400.0), MID_FORECAST_DISCHARGE_DEADBAND_W)
+
+    def test_scales_with_large_loads(self) -> None:
+        self.assertEqual(discharge_deadband_w(3000.0), 150.0)
+
+    def test_floor_wins_up_to_break_even(self) -> None:
+        break_even = (
+            MID_FORECAST_DISCHARGE_DEADBAND_W / MID_FORECAST_DISCHARGE_DEADBAND_RATIO
+        )
+        self.assertEqual(
+            discharge_deadband_w(break_even), MID_FORECAST_DISCHARGE_DEADBAND_W
+        )
+
+    def test_zero_or_negative_load_falls_back_to_floor(self) -> None:
+        for load_w in (0.0, -100.0):
+            with self.subTest(load_power_w=load_w):
+                self.assertEqual(
+                    discharge_deadband_w(load_w), MID_FORECAST_DISCHARGE_DEADBAND_W
+                )
+
+
+class BatteryDischargeDeadbandTest(unittest.TestCase):
+    """Regression cases taken directly from the observed decision log."""
+
+    def _blocks(self, battery_power_w, *, is_load_on=True, load_power_w=400.0):
+        return battery_discharge_blocks_assist(
+            battery_power_state="discharging",
+            is_load_on=is_load_on,
+            battery_power_w=battery_power_w,
+            load_power_w=load_power_w,
+        )
+
+    def test_noise_level_discharge_does_not_block(self) -> None:
+        # Compensated results of -4, -8, -13, -14 and -41 W were each enough to
+        # cancel a run before the deadband existed.
+        for battery_w in (-404.0, -408.0, -413.0, -414.0, -441.0):
+            with self.subTest(battery_power_w=battery_w):
+                self.assertFalse(self._blocks(battery_w))
+
+    def test_substantial_discharge_still_blocks(self) -> None:
+        # -163 W compensated: the battery really is carrying the household.
+        self.assertTrue(self._blocks(-563.0))
+
+    def test_deadband_boundary_is_inclusive(self) -> None:
+        self.assertTrue(self._blocks(-450.0))    # exactly -50 W compensated
+        self.assertFalse(self._blocks(-449.0))
+
+    def test_load_off_blocks_on_any_discharge(self) -> None:
+        self.assertTrue(self._blocks(-10.0, is_load_on=False))
 
 
 if __name__ == "__main__":

@@ -173,6 +173,28 @@ the decision reaches `missing_sensor` as before, so a genuinely dead sensor stil
 stops the load. An entity that disappears entirely is never bridged — that is a
 configuration change, not a dropout.
 
+### Load-compensated surplus checks
+
+Any surplus check that gates an **already running** load has to be evaluated on
+the counterfactual "what would this look like with the load off". Otherwise the
+load invalidates its own start condition: it consumes the battery charge power
+that justified starting it, the check falls under its threshold, the run is
+cancelled, the battery recovers and the cycle repeats every `min_off` window.
+
+Two places apply this:
+
+* `low_mode_assisted_start_surplus_w` credits the load's own draw back to the
+  battery before deriving the AC-usable share
+  (`energy.load_compensated_battery_charge_w`).
+* `mid_mode.battery_discharge_blocks_assist` judges discharge on the same
+  counterfactual, and only blocks past a deadband
+  (`max(50 W, 5% of load power)`) — hybrid inverters regulate around balance,
+  so a compensated result of a few watts below zero is measurement noise, not
+  a signal.
+
+While the load is off, the raw reading already is the counterfactual and
+nothing is added.
+
 ### Export-guard PV thresholds
 
 The forecast-headroom branch uses two thresholds, not one:

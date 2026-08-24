@@ -644,3 +644,46 @@ class MidModeHoldTest(unittest.TestCase):
             # Does not raise and reaches actual high-mode logic
             result = controller._should_prioritize_battery_after_runtime()
             self.assertIsInstance(result, bool)
+
+
+class LowModeAssistSurplusCompensationTest(unittest.TestCase):
+    """low_mode_assisted_start_surplus_w must be judged without the running load."""
+
+    def _controller(self, *, load_on: bool, battery_w: str) -> _TestController:
+        hass = _FakeHassImpl()
+        hass.states.set("switch.pool", "on" if load_on else "off")
+        hass.states.set("sensor.battery_power", battery_w, "W")
+        hass.states.set("sensor.grid_export", "0", "W")
+        hass.states.set("sensor.grid_import", "0", "W")
+        controller = _TestController(hass, _FakeConfigEntry())
+        controller.config.update(
+            {
+                "battery_power_sensor": "sensor.battery_power",
+                "grid_export_sensor": "sensor.grid_export",
+                "grid_import_sensor": "sensor.grid_import",
+                "load_power_w": 400.0,
+            }
+        )
+        return controller
+
+    def test_load_off_uses_the_raw_battery_reading(self) -> None:
+        controller = self._controller(load_on=False, battery_w="452")
+        self.assertEqual(controller.low_mode_assisted_start_surplus_w, 452.0)
+
+    def test_running_load_gets_its_own_draw_credited_back(self) -> None:
+        """Regression: the run used to cancel itself.
+
+        Charging fell from 935 W to 452 W once the load started, dropping the
+        assist surplus under its threshold and stopping the very run that
+        caused the drop.
+        """
+        controller = self._controller(load_on=True, battery_w="452")
+        self.assertEqual(controller.low_mode_assisted_start_surplus_w, 852.0)
+
+    def test_self_inflicted_discharge_is_compensated(self) -> None:
+        controller = self._controller(load_on=True, battery_w="-171")
+        self.assertEqual(controller.low_mode_assisted_start_surplus_w, 229.0)
+
+    def test_real_discharge_yields_no_assist_surplus(self) -> None:
+        controller = self._controller(load_on=True, battery_w="-800")
+        self.assertEqual(controller.low_mode_assisted_start_surplus_w, 0.0)

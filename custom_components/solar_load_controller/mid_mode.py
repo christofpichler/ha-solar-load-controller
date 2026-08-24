@@ -40,6 +40,27 @@ MID_FORECAST_WAIT_NEXT_HOUR_RATIO: float = 0.75
 # report 0 W briefly between measurement cycles).
 MID_FORECAST_ASSISTED_HOLD_MINUTES: float = 5.0
 
+# Deadband applied to the load-compensated battery reading before discharge is
+# treated as a real blocker. Hybrid inverters regulate around balance, so a
+# counterfactual result of a few watts below zero is measurement noise rather
+# than a signal: without a deadband a reading of -8 W cancels a run that -8 W
+# in the other direction would have kept. Scales with load power for the same
+# reason the grid tolerance does; the floor wins below a 1 kW load.
+MID_FORECAST_DISCHARGE_DEADBAND_W: float = 50.0
+MID_FORECAST_DISCHARGE_DEADBAND_RATIO: float = 0.05
+
+
+def discharge_deadband_w(
+    load_power_w: float,
+    *,
+    floor_w: float = MID_FORECAST_DISCHARGE_DEADBAND_W,
+    ratio: float = MID_FORECAST_DISCHARGE_DEADBAND_RATIO,
+) -> float:
+    """Return how far below zero the compensated battery may sit before blocking."""
+    if load_power_w <= 0:
+        return floor_w
+    return round(max(floor_w, load_power_w * ratio), 1)
+
 
 def battery_discharge_blocks_assist(
     *,
@@ -59,13 +80,15 @@ def battery_discharge_blocks_assist(
 
     While the load is off the raw state is already the counterfactual state.
     While the load is on, discharge only counts as a blocker when the battery
-    would still be discharging without the load.
+    would still be discharging without the load, by more than a deadband --
+    a counterfactual result of a few watts below zero is inverter regulation
+    noise, not a signal.
     """
     if battery_power_state != "discharging":
         return False
     if not is_load_on or battery_power_w is None:
         return True
-    return (battery_power_w + load_power_w) <= 0
+    return (battery_power_w + load_power_w) <= -discharge_deadband_w(load_power_w)
 
 
 def should_allow_mid_mode_assisted_run(

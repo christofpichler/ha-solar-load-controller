@@ -34,6 +34,31 @@ def usable_battery_charge_for_ac_surplus(
     return round(max(0.0, battery_charge_w - clipped_to_battery_w), 1)
 
 
+def load_compensated_battery_charge_w(
+    battery_power_w: float | None,
+    load_power_w: float,
+    *,
+    is_load_on: bool,
+) -> float:
+    """Return the battery charge power that would exist without the running load.
+
+    Surplus checks that gate an *already running* load have to be evaluated on
+    the counterfactual "what would this look like with the load off", otherwise
+    the load invalidates its own start condition: it eats the charge power that
+    justified starting it, the check drops below its threshold and the run is
+    cancelled — every ``min_off`` window.
+
+    While the load is off the raw reading already is the counterfactual, so
+    nothing is added. While it is on, the load's draw is credited back to the
+    battery.
+    """
+    if battery_power_w is None:
+        return 0.0
+    if is_load_on:
+        battery_power_w += load_power_w
+    return max(0.0, battery_power_w)
+
+
 def household_energy_reserve_kwh(
     base_household_load_w: float,
     reserve_margin_percent: float,
