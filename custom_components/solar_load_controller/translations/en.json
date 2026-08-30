@@ -94,7 +94,7 @@
           "debug_sensor_enabled": "Enable debug sensor and file"
         },
         "data_description": {
-          "debug_sensor_enabled": "Creates the decision debug sensor and writes one JSONL line for every changed decision to /config/solar_load_controller_decisions.jsonl. The exact path is shown on the debug sensor in the debug_log.path attribute. Retention: 7 days or 2000 entries."
+          "debug_sensor_enabled": "Creates the decision debug sensor and writes one JSONL line for every changed decision to /config/solar_load_controller_decisions.jsonl. The exact path is shown on the debug sensor in the debug_log.path attribute. Keeps a rolling window of the most recent 2000 decisions."
         }
       }
     }
@@ -194,7 +194,7 @@
           "telemetry_enabled": "Send anonymous usage heartbeat"
         },
         "data_description": {
-          "debug_sensor_enabled": "Creates the decision debug sensor and writes one JSONL line for every changed decision to /config/solar_load_controller_decisions.jsonl. The exact path is shown on the debug sensor in the debug_log.path attribute. Retention: 7 days or 2000 entries.",
+          "debug_sensor_enabled": "Creates the decision debug sensor and writes one JSONL line for every changed decision to /config/solar_load_controller_decisions.jsonl. The exact path is shown on the debug sensor in the debug_log.path attribute. Keeps a rolling window of the most recent 2000 decisions.",
           "telemetry_enabled": "Sends a random installation ID and the integration version once a day, so the number of active installations can be counted. Nothing else is transmitted: no host names, entities, devices, measurements, locations or settings. Turning this off stops it completely; the integration works exactly the same either way."
         }
       }

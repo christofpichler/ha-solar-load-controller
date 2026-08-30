@@ -94,7 +94,7 @@
           "debug_sensor_enabled": "Debug-Sensor und Datei aktivieren"
         },
         "data_description": {
-          "debug_sensor_enabled": "Legt den Decision Debug Sensor an und schreibt bei jeder geänderten Entscheidung eine JSONL-Zeile in /config/solar_load_controller_decisions.jsonl. Den genauen Pfad zeigt der Debug-Sensor im Attribut debug_log.path. Aufbewahrung: 7 Tage oder maximal 2000 Einträge."
+          "debug_sensor_enabled": "Legt den Decision Debug Sensor an und schreibt bei jeder geänderten Entscheidung eine JSONL-Zeile in /config/solar_load_controller_decisions.jsonl. Den genauen Pfad zeigt der Debug-Sensor im Attribut debug_log.path. Behält ein gleitendes Fenster der letzten 2000 Entscheidungen."
         }
       }
     }
@@ -194,7 +194,7 @@
           "telemetry_enabled": "Anonymen Nutzungs-Heartbeat senden"
         },
         "data_description": {
-          "debug_sensor_enabled": "Legt den Decision Debug Sensor an und schreibt bei jeder geänderten Entscheidung eine JSONL-Zeile in /config/solar_load_controller_decisions.jsonl. Den genauen Pfad zeigt der Debug-Sensor im Attribut debug_log.path. Aufbewahrung: 7 Tage oder maximal 2000 Einträge.",
+          "debug_sensor_enabled": "Legt den Decision Debug Sensor an und schreibt bei jeder geänderten Entscheidung eine JSONL-Zeile in /config/solar_load_controller_decisions.jsonl. Den genauen Pfad zeigt der Debug-Sensor im Attribut debug_log.path. Behält ein gleitendes Fenster der letzten 2000 Entscheidungen.",
           "telemetry_enabled": "Sendet einmal taeglich eine zufaellige Installations-ID und die Version der Integration, damit die Zahl aktiver Installationen gezaehlt werden kann. Mehr wird nicht uebertragen: keine Hostnamen, Entitaeten, Geraete, Messwerte, Standorte oder Einstellungen. Abschalten stoppt es vollstaendig; die Integration funktioniert in beiden Faellen identisch."
         }
       }
