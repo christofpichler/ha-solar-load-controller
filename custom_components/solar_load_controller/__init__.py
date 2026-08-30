@@ -13,8 +13,9 @@ from .const import (
     DEFAULT_TELEMETRY_ENABLED,
     DOMAIN,
 )
-from .coordinator import SolarLoadController
-from .telemetry import TelemetryHeartbeat
+from .coordinator import SolarLoadController, _PERSIST_STORE_VERSION
+from .persisted_state import async_remove_runtime_state
+from .telemetry import TelemetryHeartbeat, async_remove_installation_id
 
 SolarLoadControllerConfigEntry = ConfigEntry
 PLATFORMS: tuple[Platform, ...] = (
@@ -99,6 +100,23 @@ def _async_stop_telemetry_if_last_entry(hass: HomeAssistant) -> None:
     heartbeat = domain_data.pop(DATA_TELEMETRY, None)
     if heartbeat is not None:
         heartbeat.async_stop()
+
+
+async def async_remove_entry(
+    hass: HomeAssistant,
+    entry: SolarLoadControllerConfigEntry,
+) -> None:
+    """Clean up stored data when a config entry is removed.
+
+    Always drops the entry's runtime-state file. The installation id is removed
+    only once no config entry is left, since it identifies the installation
+    rather than a single entry. The decision log is left in place: it may still
+    be wanted for analysis after removal.
+    """
+    await async_remove_runtime_state(hass, _PERSIST_STORE_VERSION, entry.entry_id)
+
+    if not hass.config_entries.async_entries(DOMAIN):
+        await async_remove_installation_id(hass)
 
 
 async def _async_update_listener(
