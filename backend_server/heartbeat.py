@@ -23,10 +23,9 @@ from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 # Shown in the status page footer. Versioned separately from the integration.
-COLLECTOR_VERSION = "1.1"
+COLLECTOR_VERSION = "1.2"
 
 DB_PATH = os.environ.get("HEARTBEAT_DB", "/data/installations.db")
-STATS_PATH = os.environ.get("HEARTBEAT_STATS", "/data/stats.json")
 PORT = int(os.environ.get("HEARTBEAT_PORT", "8080"))
 ACTIVE_DAYS = int(os.environ.get("HEARTBEAT_ACTIVE_DAYS", "30"))
 RETENTION_DAYS = int(os.environ.get("HEARTBEAT_RETENTION_DAYS", "400"))
@@ -45,9 +44,24 @@ INSIGHTS_PASSWORD = os.environ.get("HEARTBEAT_INSIGHTS_PASSWORD", "")
 
 MAX_BODY_BYTES = 512
 VERSION_PATTERN = re.compile(r"^[0-9A-Za-z][0-9A-Za-z.+_-]{0,31}$")
+# ISO 3166-1 alpha-2, or Cloudflare's XX/T1 for unknown/Tor.
+COUNTRY_PATTERN = re.compile(r"^[A-Z]{2}$")
+
+
+def country_from_headers(get_header) -> str | None:
+    """Return the two-letter country the proxy resolved, if usable.
+
+    Reads CF-IPCountry, set by Cloudflare from the client IP. The IP itself is
+    never read here.
+    """
+    value = (get_header("CF-IPCountry") or "").strip().upper()
+    if COUNTRY_PATTERN.match(value) and value not in {"XX", "T1"}:
+        return value
+    return None
+
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=getattr(logging, os.environ.get("HEARTBEAT_LOG_LEVEL", "INFO").upper(), logging.INFO),
     format="%(asctime)s %(levelname)s %(message)s",
 )
 _LOGGER = logging.getLogger("heartbeat")
@@ -83,6 +97,11 @@ def init_db() -> None:
         connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_last_seen ON installations(last_seen)"
         )
+        # Country column added in collector 1.2. ALTER on an existing DB is a
+        # no-op guard: sqlite has no ADD COLUMN IF NOT EXISTS.
+        have = {r[1] for r in connection.execute("PRAGMA table_info(installations)")}
+        if "country" not in have:
+            connection.execute("ALTER TABLE installations ADD COLUMN country TEXT")
         # Counter for rows removed by prune_stale, kept for the all-time total.
         connection.execute(
             """
@@ -95,19 +114,27 @@ def init_db() -> None:
         connection.execute("INSERT OR IGNORE INTO retired (id, count) VALUES (1, 0)")
 
 
-def record_heartbeat(installation_id: str, version: str) -> None:
-    """Insert or refresh one installation."""
+def record_heartbeat(
+    installation_id: str, version: str, country: str | None = None
+) -> None:
+    """Insert or refresh one installation.
+
+    ``country`` is a two-letter code derived by the proxy; it is kept only if
+    present, so a heartbeat without it does not wipe a known value.
+    """
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     with _DB_LOCK, _connect() as connection:
         connection.execute(
             """
-            INSERT INTO installations (installation_id, version, first_seen, last_seen)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO installations
+                (installation_id, version, first_seen, last_seen, country)
+            VALUES (?, ?, ?, ?, ?)
             ON CONFLICT(installation_id) DO UPDATE SET
                 version   = excluded.version,
-                last_seen = excluded.last_seen
+                last_seen = excluded.last_seen,
+                country   = COALESCE(excluded.country, installations.country)
             """,
-            (installation_id, version, now, now),
+            (installation_id, version, now, now, country),
         )
 
 
@@ -152,6 +179,17 @@ def build_stats() -> dict:
                 (cutoff,),
             ).fetchall()
         )
+        countries = dict(
+            connection.execute(
+                """
+                SELECT COALESCE(country, '??'), COUNT(*) FROM installations
+                WHERE last_seen >= ?
+                GROUP BY country
+                ORDER BY COUNT(*) DESC
+                """,
+                (cutoff,),
+            ).fetchall()
+        )
 
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -161,6 +199,7 @@ def build_stats() -> dict:
         "known_installations": stored,
         "all_time_installations": stored + retired,
         "versions": versions,
+        "countries": countries,
     }
 
 
@@ -169,7 +208,7 @@ def list_installations() -> list[dict]:
     with _DB_LOCK, _connect() as connection:
         rows = connection.execute(
             """
-            SELECT installation_id, version, first_seen, last_seen
+            SELECT installation_id, version, first_seen, last_seen, country
             FROM installations
             ORDER BY last_seen DESC
             """
@@ -180,19 +219,10 @@ def list_installations() -> list[dict]:
             "version": row[1],
             "first_seen": row[2],
             "last_seen": row[3],
+            "country": row[4],
         }
         for row in rows
     ]
-
-
-def write_stats_file() -> None:
-    """Write stats.json for a static status page to read."""
-    stats = build_stats()
-    tmp_path = f"{STATS_PATH}.tmp"
-    with open(tmp_path, "w", encoding="utf-8") as handle:
-        json.dump(stats, handle, indent=2)
-        handle.write("\n")
-    os.replace(tmp_path, STATS_PATH)
 
 
 # ---------------------------------------------------------------------------
@@ -303,10 +333,15 @@ STATUS_PAGE = """<!doctype html>
     <div class="card"><div class="label">Active</div><div class="value" id="active">\u2013</div></div>
     <div class="card"><div class="label">All time</div><div class="value" id="alltime">\u2013</div></div>
     <div class="card"><div class="label">Versions</div><div class="value" id="vcount">\u2013</div></div>
+    <div class="card"><div class="label">Countries</div><div class="value" id="ccount">\u2013</div></div>
   </div>
   <section>
     <h2>Version distribution</h2>
     <table id="versions"></table>
+  </section>
+  <section>
+    <h2>Countries</h2>
+    <table id="countries"></table>
   </section>
   <footer id="foot"></footer>
 </main>
@@ -322,18 +357,25 @@ STATUS_PAGE = """<!doctype html>
     $("active").textContent = d.active_installations;
     $("alltime").textContent = d.all_time_installations;
 
-    const entries = Object.entries(d.versions || {});
-    $("vcount").textContent = entries.length;
+    function renderBars(id, obj) {
+      const rowsArr = Object.entries(obj || {});
+      const max = rowsArr.reduce((m, [, n]) => Math.max(m, n), 0) || 1;
+      const total = rowsArr.reduce((s, [, n]) => s + n, 0) || 1;
+      $(id).innerHTML = rowsArr.map(([k, n]) => {
+        const pct = Math.round((n / total) * 100);
+        const label = k === "??" ? "unknown" : k;
+        return "<tr><td class='v'>" + label + "</td>" +
+               "<td class='bar'><div class='track'><div class='fill' style='width:" +
+               Math.max(2, Math.round((n / max) * 100)) + "%'></div></div></td>" +
+               "<td class='n'>" + n + " \u00b7 " + pct + "%</td></tr>";
+      }).join("") || "<tr><td class='n'>no data yet</td></tr>";
+      return rowsArr;
+    }
 
-    const max = entries.reduce((m, [, n]) => Math.max(m, n), 0) || 1;
-    const total = entries.reduce((s, [, n]) => s + n, 0) || 1;
-    $("versions").innerHTML = entries.map(([v, n]) => {
-      const pct = Math.round((n / total) * 100);
-      return "<tr><td class='v'>" + v + "</td>" +
-             "<td class='bar'><div class='track'><div class='fill' style='width:" +
-             Math.max(2, Math.round((n / max) * 100)) + "%'></div></div></td>" +
-             "<td class='n'>" + n + " \u00b7 " + pct + "%</td></tr>";
-    }).join("") || "<tr><td class='n'>no data yet</td></tr>";
+    const entries = renderBars("versions", d.versions);
+    $("vcount").textContent = entries.length;
+    const cEntries = renderBars("countries", d.countries);
+    $("ccount").textContent = cEntries.filter(([k]) => k !== "??").length;
 
     // Numeric compare so 1.3.10 > 1.3.9.
     const rank = (v) => (v.match(/\\d+/g) || []).map(Number);
@@ -396,7 +438,9 @@ INSIGHTS_PAGE = """<!doctype html>
     text-align: left; color: var(--muted); font-weight: 600; font-size: .75rem;
     text-transform: uppercase; letter-spacing: .04em;
     padding: .8rem 1rem; border-bottom: 1px solid var(--line); white-space: nowrap;
+    cursor: pointer; user-select: none;
   }
+  th .arrow { opacity: .5; font-size: .7rem; margin-left: .3rem; }
   td { padding: .6rem 1rem; border-bottom: 1px solid var(--line); white-space: nowrap; }
   tr:last-child td { border-bottom: none; }
   td.id { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem; }
@@ -417,9 +461,13 @@ INSIGHTS_PAGE = """<!doctype html>
   <div class="wrap">
     <table>
       <thead>
-        <tr>
-          <th>Installation</th><th>Version</th>
-          <th>First seen</th><th>Last heartbeat</th><th>Age</th>
+        <tr id="head">
+          <th data-key="installation_id">Installation</th>
+          <th data-key="version">Version</th>
+          <th data-key="country">Country</th>
+          <th data-key="first_seen">First seen</th>
+          <th data-key="last_seen">Last heartbeat</th>
+          <th data-key="last_seen">Age</th>
         </tr>
       </thead>
       <tbody id="rows"></tbody>
@@ -448,16 +496,43 @@ INSIGHTS_PAGE = """<!doctype html>
       d.installations.length + " stored \u00b7 active window " +
       d.active_days + " days \u00b7 rows expire after " + d.retention_days + " days";
 
-    $("rows").innerHTML = d.installations.map((r) => {
-      const [txt, stale] = age(r.last_seen);
-      return "<tr>" +
-        "<td class='id'>" + r.installation_id + "</td>" +
-        "<td class='v'>" + r.version + "</td>" +
-        "<td class='num'>" + fmt(r.first_seen) + "</td>" +
-        "<td class='num'>" + fmt(r.last_seen) + "</td>" +
-        "<td class='num" + (stale ? " stale" : "") + "'>" + txt + "</td>" +
-        "</tr>";
-    }).join("") || "<tr><td class='num' colspan='5'>no installations yet</td></tr>";
+    const rows = d.installations;
+    let sortKey = "last_seen", sortDir = -1;
+
+    function render() {
+      const sorted = rows.slice().sort((a, b) => {
+        const x = a[sortKey] ?? "", y = b[sortKey] ?? "";
+        return x < y ? -sortDir : x > y ? sortDir : 0;
+      });
+      $("rows").innerHTML = sorted.map((r) => {
+        const [txt, stale] = age(r.last_seen);
+        return "<tr>" +
+          "<td class='id'>" + r.installation_id + "</td>" +
+          "<td class='v'>" + r.version + "</td>" +
+          "<td class='num'>" + (r.country || "\u2013") + "</td>" +
+          "<td class='num'>" + fmt(r.first_seen) + "</td>" +
+          "<td class='num'>" + fmt(r.last_seen) + "</td>" +
+          "<td class='num" + (stale ? " stale" : "") + "'>" + txt + "</td>" +
+          "</tr>";
+      }).join("") || "<tr><td class='num' colspan='6'>no installations yet</td></tr>";
+      [...$("head").children].forEach((th) => {
+        const a = th.querySelector(".arrow");
+        if (a) a.remove();
+        if (th.dataset.key === sortKey) {
+          th.insertAdjacentHTML("beforeend",
+            "<span class='arrow'>" + (sortDir < 0 ? "\u25bc" : "\u25b2") + "</span>");
+        }
+      });
+    }
+
+    [...$("head").children].forEach((th) => {
+      th.addEventListener("click", () => {
+        const k = th.dataset.key;
+        if (k === sortKey) { sortDir = -sortDir; } else { sortKey = k; sortDir = -1; }
+        render();
+      });
+    });
+    render();
 
     $("foot").innerHTML =
       "<a href='" + REPO + "'>" + REPO.replace(/^https:\\/\\//, "") + "</a>" +
@@ -527,37 +602,54 @@ class HeartbeatHandler(BaseHTTPRequestHandler):
         try:
             length = int(self.headers.get("Content-Length", "0"))
         except ValueError:
+            _LOGGER.debug("Rejected heartbeat: bad Content-Length")
             self._respond(400)
             return
 
         if length <= 0 or length > MAX_BODY_BYTES:
+            _LOGGER.debug("Rejected heartbeat: body length %s", length)
             self._respond(400)
             return
 
         try:
             payload = json.loads(self.rfile.read(length))
         except (ValueError, OSError):
+            _LOGGER.debug("Rejected heartbeat: body is not JSON")
             self._respond(400)
             return
 
         if not isinstance(payload, dict):
+            _LOGGER.debug("Rejected heartbeat: body is not an object")
             self._respond(400)
             return
 
         installation_id = payload.get("installation_id")
         version = payload.get("version")
         if not valid_installation_id(installation_id) or not valid_version(version):
+            _LOGGER.debug("Rejected heartbeat: invalid installation_id or version")
             self._respond(400)
             return
 
+        country = country_from_headers(self.headers.get)
         try:
-            record_heartbeat(installation_id, version)
+            record_heartbeat(installation_id, version, country)
         except sqlite3.Error as err:
             _LOGGER.error("Could not record heartbeat: %s", err)
             self._respond(503)
             return
 
+        _LOGGER.debug("Recorded heartbeat: version=%s country=%s", version, country or "-")
         self._respond(204)
+
+    def _method_not_allowed(self) -> None:
+        """Reply 405 with an empty body, hiding the default 501 stack page."""
+        self.send_response(405)
+        self.send_header("Allow", "GET, HEAD, POST")
+        self.send_header("Content-Length", "0")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+
+    do_PUT = do_DELETE = do_PATCH = do_OPTIONS = _method_not_allowed  # noqa: N815
 
     def do_HEAD(self) -> None:  # noqa: N802 - required by BaseHTTPRequestHandler
         """Answer with the headers GET would send, without the body."""
@@ -626,14 +718,13 @@ class HeartbeatHandler(BaseHTTPRequestHandler):
 # ---------------------------------------------------------------------------
 
 def maintenance_loop(stop_event: threading.Event) -> None:
-    """Prune stale rows and refresh stats.json until asked to stop."""
+    """Prune stale rows until asked to stop."""
     while not stop_event.is_set():
         try:
             removed = prune_stale()
             if removed:
                 _LOGGER.info("Pruned %s stale installation(s)", removed)
-            write_stats_file()
-        except (sqlite3.Error, OSError) as err:
+        except sqlite3.Error as err:
             _LOGGER.warning("Maintenance run failed: %s", err)
         stop_event.wait(MAINTENANCE_INTERVAL_SECONDS)
 
