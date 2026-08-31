@@ -12,7 +12,6 @@ from .const import CONF_DEBUG_SENSOR_ENABLED
 from .decision_log import (
     DECISION_LOG_FILENAME,
     DECISION_LOG_MAX_ENTRIES,
-    DECISION_LOG_RETENTION_DAYS,
     append_decision_log,
 )
 from .high_mode import (
@@ -67,7 +66,6 @@ def build_decision_log_record(
             "title": view.entry.title,
         },
         "retention": {
-            "days": DECISION_LOG_RETENTION_DAYS,
             "max_entries": DECISION_LOG_MAX_ENTRIES,
         },
         "load": {
@@ -188,7 +186,6 @@ class DecisionDebugMixin:
             "enabled": bool(self.config.get(CONF_DEBUG_SENSOR_ENABLED)),
             "path": self.hass.config.path(DECISION_LOG_FILENAME),
             "format": "jsonl",
-            "retention_days": DECISION_LOG_RETENTION_DAYS,
             "max_entries": DECISION_LOG_MAX_ENTRIES,
         }
 

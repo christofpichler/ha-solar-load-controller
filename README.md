@@ -197,9 +197,10 @@ final decision, every decision input, the relevant settings and the raw Home
 Assistant states of the configured entities. That is enough to reconstruct any
 switching behaviour after the fact.
 
-Pruning starts once the file reaches 2000 entries; from then on it keeps at
-most 2000 and drops anything older than 7 days. The path is also exposed on the
-debug sensor as `debug_log.path`.
+The file is a rolling window of the most recent 2000 decisions: once full, the
+oldest line is dropped as a new one is written, so the size stays bounded and
+recent history is always present. The path is also exposed on the debug sensor
+as `debug_log.path`.
 
 ## Support
 

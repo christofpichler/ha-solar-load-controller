@@ -45,6 +45,11 @@ helpers_aiohttp = sys.modules.setdefault(
 loader = sys.modules.setdefault(
     "homeassistant.loader", types.ModuleType("homeassistant.loader")
 )
+util = sys.modules.setdefault("homeassistant.util", types.ModuleType("homeassistant.util"))
+util_dt = sys.modules.setdefault(
+    "homeassistant.util.dt", types.ModuleType("homeassistant.util.dt")
+)
+util.dt = util_dt
 
 
 def _callback(func):
@@ -68,6 +73,9 @@ class _FakeStore:
 
     async def async_save(self, data) -> None:
         _FakeStore._data[self.key] = data
+
+    async def async_remove(self) -> None:
+        _FakeStore._data.pop(self.key, None)
 
 
 helpers_storage.Store = _FakeStore
@@ -109,6 +117,12 @@ async def _async_get_integration(_hass, _domain):
 loader.async_get_integration = _async_get_integration
 
 from custom_components.solar_load_controller import telemetry  # noqa: E402
+from custom_components.solar_load_controller.telemetry import (  # noqa: E402
+    async_remove_installation_id,
+)
+from custom_components.solar_load_controller.persisted_state import (  # noqa: E402
+    async_remove_runtime_state,
+)
 
 
 class _FakeHass:
@@ -195,6 +209,60 @@ class HeartbeatPayloadTest(unittest.TestCase):
                     _FakeHass(), installation_id="abc", version="1.3.2"
                 )
             )
+
+
+class RemoveStoreTest(unittest.TestCase):
+    """Cleanup helpers used by async_remove_entry.
+
+    Patches the Store reference on each module directly, so the test does not
+    depend on which test file first bound homeassistant.helpers.storage.Store.
+    """
+
+    def setUp(self) -> None:
+        from custom_components.solar_load_controller import (
+            persisted_state as _ps,
+            telemetry as _tel,
+        )
+        self._ps = _ps
+        self._tel = _tel
+        self.removed: list[str] = []
+
+        recorded = self.removed
+
+        class _RecStore:
+            def __init__(self, _hass, _version, key) -> None:
+                self.key = key
+
+            async def async_remove(self) -> None:
+                recorded.append(self.key)
+
+        self._orig_ps = _ps.Store
+        self._orig_tel = _tel.Store
+        _ps.Store = _RecStore
+        _tel.Store = _RecStore
+
+    def tearDown(self) -> None:
+        self._ps.Store = self._orig_ps
+        self._tel.Store = self._orig_tel
+
+    def test_installation_id_store_is_removed(self) -> None:
+        _run(async_remove_installation_id(_FakeHass()))
+        self.assertEqual(self.removed, ["solar_load_controller_installation_id"])
+
+    def test_runtime_state_store_is_entry_scoped(self) -> None:
+        _run(async_remove_runtime_state(_FakeHass(), 1, "abc"))
+        self.assertEqual(self.removed, ["solar_load_controller_abc_state"])
+
+    def test_removing_one_entry_uses_only_its_key(self) -> None:
+        _run(async_remove_runtime_state(_FakeHass(), 1, "aaa"))
+        _run(async_remove_runtime_state(_FakeHass(), 1, "bbb"))
+        self.assertEqual(
+            self.removed,
+            [
+                "solar_load_controller_aaa_state",
+                "solar_load_controller_bbb_state",
+            ],
+        )
 
 
 if __name__ == "__main__":

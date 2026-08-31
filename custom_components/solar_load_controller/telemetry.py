@@ -52,6 +52,15 @@ async def async_get_installation_id(hass: HomeAssistant) -> str:
     return installation_id
 
 
+async def async_remove_installation_id(hass: HomeAssistant) -> None:
+    """Delete the stored installation id.
+
+    Called when the last config entry is removed, so no identifier is left on
+    disk. A later re-install generates a fresh id.
+    """
+    await Store(hass, _STORE_VERSION, _STORE_KEY).async_remove()
+
+
 async def async_current_version(hass: HomeAssistant) -> str:
     """Return the integration version from the manifest."""
     integration = await async_get_integration(hass, DOMAIN)

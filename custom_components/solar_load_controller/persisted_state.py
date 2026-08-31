@@ -49,6 +49,15 @@ class PersistedControllerState:
             last_turned_off_at=last_turned_off_at,
         )
 
+    async def async_remove(self) -> None:
+        """Delete the persisted state file for this entry."""
+        await self.store.async_remove()
+
+
+async def async_remove_runtime_state(hass, version: int, entry_id: str) -> None:
+    """Delete the persisted runtime-state store of one config entry."""
+    await PersistedControllerState(hass, version, entry_id).async_remove()
+
 
 async def async_load_runtime_state(
     store,
