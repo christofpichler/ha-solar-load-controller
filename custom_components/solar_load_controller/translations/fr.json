@@ -1,0 +1,298 @@
+{
+  "title": "Solar Load Controller",
+  "config": {
+    "error": {
+      "low_threshold_too_high": "Le seuil du mode Mid doit être inférieur à celui du mode High."
+    },
+    "step": {
+      "user": {
+        "title": "1/6 Charge",
+        "description": "Sélectionnez l'interrupteur à piloter et indiquez la puissance typique de la charge. Utilisez un interrupteur virtuel si vous souhaitez d'abord tester la logique.",
+        "data": {
+          "name": "Nom",
+          "load_switch": "Interrupteur de charge ou interrupteur virtuel",
+          "load_power_w": "Puissance de la charge (W)"
+        }
+      },
+      "runtime": {
+        "title": "2/6 Fonctionnement",
+        "description": "Définissez la durée de fonctionnement quotidienne minimale, la plage horaire autorisée et les temporisations anti-cycles courts. Ces réglages déterminent l'urgence avec laquelle la charge doit encore fonctionner plus tard dans la journée.",
+        "data": {
+          "min_daily_runtime_minutes": "Durée de fonctionnement quotidienne minimale",
+          "earliest_start_time": "Démarrage autorisé à partir de",
+          "latest_finish_time": "Fonctionnement à terminer avant",
+          "min_on_minutes": "Durée de marche minimale",
+          "min_off_minutes": "Durée d'arrêt minimale"
+        },
+        "data_description": {
+          "min_daily_runtime_minutes": "Objectif de fonctionnement garanti pour la journée. Si le solaire ne suffit pas, le mode Low peut malgré tout le forcer plus tard.",
+          "min_on_minutes": "Empêche des commutations arrêt/marche rapprochées après le démarrage de la charge.",
+          "min_off_minutes": "Empêche un redémarrage immédiat après l'arrêt de la charge."
+        }
+      },
+      "energy": {
+        "title": "3/6 Réseau et prévision",
+        "description": "Connectez les capteurs réseau en temps réel, la puissance PV et les entrées de prévision solaire. Cette page ne concerne que les mesures et les sources de prévision.",
+        "data": {
+          "grid_import_sensor": "Soutirage réseau (positif)",
+          "grid_export_sensor": "Injection réseau (positive)",
+          "pv_current_power_sensor": "Puissance PV actuelle (optionnel)",
+          "pv_size_kwp": "Puissance du champ PV (kWc)",
+          "inverter_limit_w": "Limite de l'onduleur (optionnel)",
+          "forecast_today_sensor": "Prévision du jour (kWh)",
+          "forecast_next_hour_sensor": "Prévision de l'heure suivante (optionnel)",
+          "forecast_remaining_today_sensor": "Prévision restante aujourd'hui (optionnel)"
+        },
+        "data_description": {
+          "forecast_next_hour_sensor": "Améliore les décisions à court terme, comme attendre ou redémarrer plus tard dans la journée.",
+          "forecast_remaining_today_sensor": "Améliore le calcul de l'énergie encore attendue pour le reste de la journée."
+        }
+      },
+      "battery": {
+        "title": "4/6 Batterie",
+        "description": "Les entrées de batterie sont optionnelles mais améliorent les décisions. La capacité et l'état de charge servent à estimer si la prévision restante peut encore remplir la batterie plus tard dans la journée.",
+        "data": {
+          "battery_soc_sensor": "État de charge de la batterie (optionnel)",
+          "battery_power_sensor": "Puissance de la batterie (optionnel)",
+          "battery_power_direction": "Signe de la puissance batterie",
+          "battery_capacity_kwh": "Capacité de la batterie (optionnel)",
+          "battery_mode": "Mode batterie",
+          "min_battery_soc": "État de charge minimal de la batterie"
+        },
+        "data_description": {
+          "battery_power_direction": "Indiquez le comportement du capteur brut de puissance batterie. L'intégration le normalise de sorte qu'une valeur positive signifie charge en interne.",
+          "battery_mode": "Choisissez si le contrôleur doit protéger la batterie de manière plus prudente ou l'utiliser activement lorsque c'est nécessaire.",
+          "min_battery_soc": "En mode Utiliser, le contrôleur évite le recours forcé à la batterie en dessous de ce seuil d'état de charge."
+        }
+      },
+      "modes": {
+        "title": "5/6 Modes",
+        "description": "Le comportement des modes se règle ici. Low, Mid et High disposent chacun de réglages dédiés.",
+        "data": {
+          "grid_import_limit_w": "Limite réseau en mode Low",
+          "forecast_low_threshold_kwh_per_kwp": "Mode Mid à partir de (kWh/kWc)",
+          "forecast_high_threshold_kwh_per_kwp": "Mode High à partir de (kWh/kWc)",
+          "high_mode_base_household_load_w": "Charge de base du foyer en mode High",
+          "high_mode_household_reserve_margin_percent": "Marge de réserve du foyer en mode High",
+          "min_runtime_battery_override": "La durée minimale Low peut outrepasser la protection batterie",
+          "min_runtime_grid_override": "La durée minimale Low peut outrepasser la limite réseau"
+        },
+        "data_description": {
+          "grid_import_limit_w": "Soutirage réseau maximal autorisé en mode Low avant que la charge ne soit bloquée ou arrêtée. Le mode High applique une règle de soutirage bien plus stricte.",
+          "forecast_low_threshold_kwh_per_kwp": "Si la prévision du jour par kWc atteint cette valeur, la journée est traitée en mode Mid. Les jours en dessous de ce seuil sont en mode Low.",
+          "forecast_high_threshold_kwh_per_kwp": "Si la prévision du jour par kWc atteint cette valeur, la journée est traitée en mode High. Le mode Mid se situe entre Low et High.",
+          "high_mode_base_household_load_w": "Utilisé uniquement une fois la durée de fonctionnement quotidienne minimale déjà atteinte lors des journées High. Il s'agit de la charge de base permanente attendue du foyer, qui doit rester réservée sur la prévision restante avant d'autoriser un fonctionnement optionnel de la charge.",
+          "high_mode_household_reserve_margin_percent": "Marge de sécurité supplémentaire ajoutée à la charge de base du foyer pour couvrir les charges variables de fin de journée.",
+          "min_runtime_battery_override": "Si activé, le mode Low peut malgré tout faire fonctionner la charge pour atteindre la durée quotidienne minimale, même lorsque la protection batterie normale bloquerait le fonctionnement forcé.",
+          "min_runtime_grid_override": "Si activé, le mode Low peut malgré tout faire fonctionner la charge pour atteindre la durée quotidienne minimale, même lorsque la limite réseau normale du mode Low bloquerait le démarrage."
+        }
+      },
+      "advanced": {
+        "title": "6/6 Diagnostics",
+        "description": "N'activez la sortie de débogage que pour le dépannage.",
+        "data": {
+          "debug_sensor_enabled": "Activer le capteur et le fichier de débogage"
+        },
+        "data_description": {
+          "debug_sensor_enabled": "Crée le capteur de débogage des décisions et écrit une ligne JSONL pour chaque décision modifiée dans /config/solar_load_controller_decisions.jsonl. Le chemin exact est indiqué sur le capteur de débogage dans l'attribut debug_log.path. Conserve une fenêtre glissante des 2000 décisions les plus récentes."
+        }
+      }
+    }
+  },
+  "options": {
+    "error": {
+      "low_threshold_too_high": "Le seuil du mode Mid doit être inférieur à celui du mode High."
+    },
+    "step": {
+      "init": {
+        "title": "Options : 1/6 Charge",
+        "description": "Ajustez l'interrupteur piloté et la puissance typique de la charge.",
+        "data": {
+          "name": "Nom",
+          "load_switch": "Interrupteur de charge ou interrupteur virtuel",
+          "load_power_w": "Puissance de la charge (W)"
+        }
+      },
+      "runtime": {
+        "title": "Options : 2/6 Fonctionnement",
+        "description": "Ajustez la durée de fonctionnement quotidienne garantie, la plage horaire et les temporisations anti-cycles courts.",
+        "data": {
+          "min_daily_runtime_minutes": "Durée de fonctionnement quotidienne minimale",
+          "earliest_start_time": "Démarrage autorisé à partir de",
+          "latest_finish_time": "Fonctionnement à terminer avant",
+          "min_on_minutes": "Durée de marche minimale",
+          "min_off_minutes": "Durée d'arrêt minimale"
+        },
+        "data_description": {
+          "min_daily_runtime_minutes": "Objectif de fonctionnement garanti pour la journée. Si le solaire ne suffit pas, le mode Low peut malgré tout le forcer plus tard.",
+          "min_on_minutes": "Empêche des commutations arrêt/marche rapprochées après le démarrage de la charge.",
+          "min_off_minutes": "Empêche un redémarrage immédiat après l'arrêt de la charge."
+        }
+      },
+      "energy": {
+        "title": "Options : 3/6 Réseau et prévision",
+        "description": "Ajustez les capteurs réseau en temps réel, la puissance PV et les entrées de prévision. Cette page ne concerne que les mesures et les sources de prévision.",
+        "data": {
+          "grid_import_sensor": "Soutirage réseau (positif)",
+          "grid_export_sensor": "Injection réseau (positive)",
+          "pv_current_power_sensor": "Puissance PV actuelle (optionnel)",
+          "pv_size_kwp": "Puissance du champ PV (kWc)",
+          "inverter_limit_w": "Limite de l'onduleur (optionnel)",
+          "forecast_today_sensor": "Prévision du jour (kWh)",
+          "forecast_next_hour_sensor": "Prévision de l'heure suivante (optionnel)",
+          "forecast_remaining_today_sensor": "Prévision restante aujourd'hui (optionnel)"
+        },
+        "data_description": {
+          "forecast_next_hour_sensor": "Améliore les décisions à court terme, comme attendre ou redémarrer plus tard dans la journée.",
+          "forecast_remaining_today_sensor": "Améliore le calcul de l'énergie encore attendue pour le reste de la journée."
+        }
+      },
+      "battery": {
+        "title": "Options : 4/6 Batterie",
+        "description": "Ajustez les entrées de batterie optionnelles et les seuils. Ces valeurs aident le contrôleur à décider si la prévision restante doit d'abord aller vers la batterie.",
+        "data": {
+          "battery_soc_sensor": "État de charge de la batterie (optionnel)",
+          "battery_power_sensor": "Puissance de la batterie (optionnel)",
+          "battery_power_direction": "Signe de la puissance batterie",
+          "battery_capacity_kwh": "Capacité de la batterie (optionnel)",
+          "battery_mode": "Mode batterie",
+          "min_battery_soc": "État de charge minimal de la batterie"
+        },
+        "data_description": {
+          "battery_power_direction": "Indiquez le comportement du capteur brut de puissance batterie. L'intégration le normalise de sorte qu'une valeur positive signifie charge en interne.",
+          "battery_mode": "Choisissez si le contrôleur doit protéger la batterie de manière plus prudente ou l'utiliser activement lorsque c'est nécessaire.",
+          "min_battery_soc": "En mode Utiliser, le contrôleur évite le recours forcé à la batterie en dessous de ce seuil d'état de charge."
+        }
+      },
+      "modes": {
+        "title": "Options : 5/6 Modes",
+        "description": "Le comportement des modes se règle ici. Low, Mid et High disposent chacun de réglages dédiés.",
+        "data": {
+          "grid_import_limit_w": "Limite réseau en mode Low",
+          "forecast_low_threshold_kwh_per_kwp": "Mode Mid à partir de (kWh/kWc)",
+          "forecast_high_threshold_kwh_per_kwp": "Mode High à partir de (kWh/kWc)",
+          "high_mode_base_household_load_w": "Charge de base du foyer en mode High",
+          "high_mode_household_reserve_margin_percent": "Marge de réserve du foyer en mode High",
+          "min_runtime_battery_override": "La durée minimale Low peut outrepasser la protection batterie",
+          "min_runtime_grid_override": "La durée minimale Low peut outrepasser la limite réseau"
+        },
+        "data_description": {
+          "grid_import_limit_w": "Soutirage réseau maximal autorisé en mode Low avant que la charge ne soit bloquée ou arrêtée. Le mode High applique une règle de soutirage bien plus stricte.",
+          "forecast_low_threshold_kwh_per_kwp": "Si la prévision du jour par kWc atteint cette valeur, la journée est traitée en mode Mid. Les jours en dessous de ce seuil sont en mode Low.",
+          "forecast_high_threshold_kwh_per_kwp": "Si la prévision du jour par kWc atteint cette valeur, la journée est traitée en mode High. Le mode Mid se situe entre Low et High.",
+          "high_mode_base_household_load_w": "Utilisé uniquement une fois la durée de fonctionnement quotidienne minimale déjà atteinte lors des journées High. Il s'agit de la charge de base permanente attendue du foyer, qui doit rester réservée sur la prévision restante avant d'autoriser un fonctionnement optionnel de la charge.",
+          "high_mode_household_reserve_margin_percent": "Marge de sécurité supplémentaire ajoutée à la charge de base du foyer pour couvrir les charges variables de fin de journée.",
+          "min_runtime_battery_override": "Si activé, le mode Low peut malgré tout faire fonctionner la charge pour atteindre la durée quotidienne minimale, même lorsque la protection batterie normale bloquerait le fonctionnement forcé.",
+          "min_runtime_grid_override": "Si activé, le mode Low peut malgré tout faire fonctionner la charge pour atteindre la durée quotidienne minimale, même lorsque la limite réseau normale du mode Low bloquerait le démarrage."
+        }
+      },
+      "advanced": {
+        "title": "Options : 6/6 Diagnostics",
+        "description": "Ajustez la sortie de débogage pour le dépannage.",
+        "data": {
+          "debug_sensor_enabled": "Activer le capteur et le fichier de débogage",
+          "telemetry_enabled": "Envoyer un signal d'utilisation anonyme"
+        },
+        "data_description": {
+          "debug_sensor_enabled": "Crée le capteur de débogage des décisions et écrit une ligne JSONL pour chaque décision modifiée dans /config/solar_load_controller_decisions.jsonl. Le chemin exact est indiqué sur le capteur de débogage dans l'attribut debug_log.path. Conserve une fenêtre glissante des 2000 décisions les plus récentes.",
+          "telemetry_enabled": "Envoie un identifiant d'installation aléatoire et la version de l'intégration une fois par jour, afin de pouvoir compter le nombre d'installations actives. Rien d'autre n'est transmis : ni noms d'hôte, ni entités, ni appareils, ni mesures, ni emplacements, ni réglages. Le désactiver l'arrête complètement ; l'intégration fonctionne exactement de la même manière dans les deux cas."
+        }
+      }
+    }
+  },
+  "selector": {
+    "battery_mode": {
+      "options": {
+        "preserve": "Préserver la batterie",
+        "use": "Utiliser la batterie"
+      }
+    },
+    "battery_power_direction": {
+      "options": {
+        "charging_positive": "Positif signifie charge",
+        "discharging_positive": "Positif signifie décharge"
+      }
+    },
+    "forecast_day_mode": {
+      "options": {
+        "auto": "Auto",
+        "low": "Low",
+        "mid": "Mid",
+        "high": "High"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "available_surplus": {
+        "name": "Surplus disponible"
+      },
+      "decision_reason": {
+        "name": "Raison de la décision",
+        "state": {
+          "solar": "Solaire",
+          "export_guard": "Garde injection",
+          "forecast_run": "Démarrage prévision",
+          "forecast": "Attente prévision",
+          "low_assist": "Appoint solaire",
+          "low_wait": "Attente du solaire",
+          "grid_import": "Limite réseau",
+          "battery": "Garde batterie",
+          "battery_priority": "Priorité batterie",
+          "runtime_force": "Fonctionnement forcé",
+          "runtime_met": "Objectif atteint",
+          "paused": "En pause",
+          "waiting": "Veille",
+          "missing_sensor": "Capteur manquant",
+          "min_on": "Marche min.",
+          "min_off": "Arrêt min.",
+          "time_window": "Fenêtre horaire"
+        }
+      },
+      "decision_debug": {
+        "name": "Débogage des décisions"
+      },
+      "energy_today": {
+        "name": "Énergie aujourd'hui"
+      },
+      "effective_solar_surplus": {
+        "name": "Surplus solaire effectif"
+      },
+      "forced_runtime_today": {
+        "name": "Fonctionnement forcé aujourd'hui"
+      },
+      "forecast_day_mode": {
+        "name": "Mode du jour selon prévision",
+        "state": {
+          "auto": "Auto",
+          "low": "Low",
+          "mid": "Mid",
+          "high": "High",
+          "unknown": "Inconnu"
+        }
+      },
+      "runtime_remaining_today": {
+        "name": "Fonctionnement restant aujourd'hui"
+      },
+      "runtime_today": {
+        "name": "Fonctionnement aujourd'hui"
+      },
+      "solar_runtime_today": {
+        "name": "Fonctionnement solaire aujourd'hui"
+      },
+      "switch_cycles_today": {
+        "name": "Cycles de commutation automatiques aujourd'hui"
+      }
+    },
+    "switch": {
+      "automation_enabled": {
+        "name": "Automatisation activée"
+      }
+    },
+    "select": {
+      "forecast_day_mode_override": {
+        "name": "Forçage du mode du jour"
+      }
+    }
+  }
+}
