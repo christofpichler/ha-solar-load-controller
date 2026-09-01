@@ -3,6 +3,7 @@
 [![HACS Default](https://img.shields.io/badge/HACS-Default-blue.svg)](https://github.com/hacs/default)
 [![Release](https://img.shields.io/github/v/release/christofpichler/ha-solar-load-controller)](https://github.com/christofpichler/ha-solar-load-controller/releases)
 [![Tests](https://github.com/christofpichler/ha-solar-load-controller/actions/workflows/tests.yml/badge.svg)](https://github.com/christofpichler/ha-solar-load-controller/actions/workflows/tests.yml)
+[![Buy me a coffee](https://img.shields.io/badge/Donate-Buy%20me%20a%20coffee-ffd557.svg)](https://www.buymeacoffee.com/christofpichler)
 
 <img src="assets/icon.svg" alt="Solar Load Controller icon" width="96">
 
