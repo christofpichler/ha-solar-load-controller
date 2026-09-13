@@ -68,6 +68,11 @@ that goes quiet for a few months has not disappeared - it is waiting for spring.
 **Input is validated.** Only a canonical uuid4 and a short version string are
 accepted, so a scanner that finds the endpoint cannot fill the table with junk.
 
+**Country is derived, the IP is not read.** The two-letter country comes from
+Cloudflare's `CF-IPCountry` header, which Cloudflare resolves from the client
+IP at its edge. The collector never reads the IP itself. No finer location, no
+ISP, no ASN is stored - only the country code.
+
 **Per-installation data is not served by default.** The aggregate endpoints
 (`/` and `/stats.json`) never expose an identifier. There is a `/insights`
 route that lists them for the operator, and it returns `404` unless it is
@@ -85,7 +90,7 @@ Deleting it there produces a new one and orphans the old row, which then expires
 |---|---|---|
 | `POST` | `/heartbeat` | Record one installation. `204` on success, `400` on bad input |
 | `GET` | `/` | Status page - counts and version distribution |
-| `GET` | `/stats.json` | The same numbers as JSON |
+| `GET` | `/stats.json` | The same numbers as JSON, plus a country breakdown |
 | `GET` | `/health` | Liveness probe |
 | `HEAD` | any GET path | Same status and headers as `GET`, no body |
 | `GET` | `/insights` | Per-installation listing. **Off unless enabled**, see below |
@@ -95,7 +100,8 @@ Deleting it there produces a new one and orphans the old row, which then expires
   "active_installations": 12,
   "known_installations": 15,
   "all_time_installations": 18,
-  "versions": {"1.3.2": 11, "1.3.1": 4}
+  "versions": {"1.3.2": 11, "1.3.1": 4},
+  "countries": {"DE": 9, "AT": 4, "FR": 2}
 }
 ```
 
@@ -116,8 +122,8 @@ endpoints accept nothing.
 | `HEARTBEAT_RETENTION_DAYS` | `400` | Days without contact before the row is deleted and counted as retired |
 | `HEARTBEAT_PORT` | `8080` | Listen port |
 | `HEARTBEAT_DB` | `/data/installations.db` | SQLite file |
-| `HEARTBEAT_STATS` | `/data/stats.json` | Generated statistics file |
-| `HEARTBEAT_MAINTENANCE` | `600` | Seconds between prune and stats refresh |
+| `HEARTBEAT_MAINTENANCE` | `600` | Seconds between prune runs |
+| `HEARTBEAT_LOG_LEVEL` | `INFO` | Set to `DEBUG` to log each accepted or rejected heartbeat (no IP, no id) |
 | `HEARTBEAT_INSIGHTS` | unset | Set to `1` to expose `/insights` |
 | `HEARTBEAT_INSIGHTS_USER` | unset | Optional built-in basic auth for `/insights` |
 | `HEARTBEAT_INSIGHTS_PASSWORD` | unset | Optional built-in basic auth for `/insights` |
